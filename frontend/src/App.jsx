@@ -20,7 +20,15 @@ import {
   X,
   MapPin,
   Check,
-  Users
+  Users,
+  Bell,
+  Download,
+  UploadCloud,
+  Award,
+  FileCheck,
+  BarChart3,
+  TrendingUp,
+  FileSpreadsheet
 } from 'lucide-react';
 import { api, setToken, getToken } from './api';
 
@@ -44,10 +52,16 @@ export default function App() {
   const [appointmentsList, setAppointmentsList] = useState([]);
   const [alertsList, setAlertsList] = useState([]);
   const [delayReports, setDelayReports] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+
+  // Notifications
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Modals & Active selections
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [requestEvents, setRequestEvents] = useState([]);
+  const [requestDocuments, setRequestDocuments] = useState([]);
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [showTransitionModal, setShowTransitionModal] = useState(false);
@@ -64,6 +78,10 @@ export default function App() {
   const [apptSlot, setApptSlot] = useState('');
   const [availableSlots, setAvailableSlots] = useState([]);
 
+  // Document upload state
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -74,6 +92,15 @@ export default function App() {
     loadUser();
     loadCatalogue();
   }, []);
+
+  // Polling notifications every 20 seconds when logged in
+  useEffect(() => {
+    if (currentUser) {
+      loadNotifications();
+      const interval = setInterval(loadNotifications, 20000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser]);
 
   // Load contextual data on user / tab change
   useEffect(() => {
@@ -99,6 +126,25 @@ export default function App() {
     } catch (err) {
       setToken(null);
       setCurrentUser(null);
+    }
+  };
+
+  const loadNotifications = async () => {
+    try {
+      const notifs = await api.getNotifications();
+      setNotifications(notifs || []);
+    } catch (e) {
+      // ignore in background
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    try {
+      await api.readAllNotifications();
+      loadNotifications();
+      showToast('All notifications marked as read');
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -135,6 +181,7 @@ export default function App() {
   const handleLogout = () => {
     setToken(null);
     setCurrentUser(null);
+    setNotifications([]);
     setActiveTab('track');
     showToast('Logged out');
   };
@@ -190,14 +237,16 @@ export default function App() {
   const loadSupervisorData = async () => {
     setLoading(true);
     try {
-      const [reqs, alrts, reps] = await Promise.all([
+      const [reqs, alrts, reps, anlyt] = await Promise.all([
         api.getRequests(),
         api.getAlerts(),
-        api.getDelayReport()
+        api.getDelayReport(),
+        api.getExecutiveAnalytics()
       ]);
       setRequestsList(reqs || []);
       setAlertsList(alrts || []);
       setDelayReports(reps || []);
+      setAnalytics(anlyt || null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -234,16 +283,50 @@ export default function App() {
   const handleViewRequest = async (id) => {
     setLoading(true);
     try {
-      const [detail, evts] = await Promise.all([
+      const [detail, evts, docs] = await Promise.all([
         api.getRequestDetail(id),
-        api.getRequestEvents(id)
+        api.getRequestEvents(id),
+        api.getRequestDocuments(id).catch(() => [])
       ]);
       setSelectedRequest(detail);
       setRequestEvents(evts || []);
+      setRequestDocuments(docs || []);
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Document upload handler
+  const handleDocumentUpload = async (e) => {
+    e.preventDefault();
+    if (!selectedFile || !selectedRequest) return;
+    setUploadingDoc(true);
+    try {
+      await api.uploadDocument(selectedRequest.id, selectedFile);
+      showToast(`Uploaded document: ${selectedFile.name}`);
+      setSelectedFile(null);
+      const docs = await api.getRequestDocuments(selectedRequest.id);
+      setRequestDocuments(docs || []);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  // Verify document handler
+  const handleVerifyDocument = async (docId, status) => {
+    try {
+      await api.verifyDocument(docId, status, status === 'VERIFIED' ? 'Verified valid' : 'Rejected illegible');
+      showToast(`Document marked as ${status}`);
+      if (selectedRequest) {
+        const docs = await api.getRequestDocuments(selectedRequest.id);
+        setRequestDocuments(docs || []);
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   };
 
@@ -343,11 +426,13 @@ export default function App() {
     }
   };
 
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       {/* Toast Notification */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg border flex items-center gap-3 transition-all ${
+        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-xl border flex items-center gap-3 transition-all ${
           toast.type === 'error' ? 'bg-rose-50 text-rose-800 border-rose-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'
         }`}>
           {toast.type === 'error' ? <AlertCircle className="w-5 h-5 text-rose-600" /> : <CheckCircle2 className="w-5 h-5 text-emerald-600" />}
@@ -360,33 +445,34 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="font-semibold text-slate-200">System Ready:</span>
-            <span>Sunday–Friday working week • SLA Clock Engine • Anti-Probing RBAC</span>
+            <span className="font-semibold text-slate-200">Continuous SLA Daemon Active</span>
+            <span className="text-slate-500">•</span>
+            <span>Sunday–Friday Workdays • Digital PDF QR Verification</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-slate-400 mr-1">One-Click Switch:</span>
             <button
               onClick={() => handleFastLogin('citizen1@example.org', 'demo-password-1')}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-sky-400 rounded font-medium transition"
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-sky-400 rounded-lg font-medium transition"
             >
               Citizen (Jane)
             </button>
             <button
               onClick={() => handleFastLogin('officer1@example.org', 'demo-password-1')}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded font-medium transition"
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg font-medium transition"
             >
               Officer (Alex)
             </button>
             <button
               onClick={() => handleFastLogin('supervisor@example.org', 'demo-password-1')}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-rose-400 rounded font-medium transition"
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-rose-400 rounded-lg font-medium transition"
             >
               Supervisor
             </button>
             {currentUser && (
               <button
                 onClick={handleLogout}
-                className="px-2 py-1 bg-red-950/60 hover:bg-red-900 text-red-300 rounded font-medium flex items-center gap-1 transition ml-2"
+                className="px-2 py-1 bg-red-950/60 hover:bg-red-900 text-red-300 rounded-lg font-medium flex items-center gap-1 transition ml-2"
               >
                 <LogOut className="w-3 h-3" /> Log out
               </button>
@@ -399,12 +485,12 @@ export default function App() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('track')}>
-            <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center font-bold shadow-md shadow-sky-600/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-700 to-sky-500 text-white flex items-center justify-center font-bold shadow-md shadow-sky-600/20">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-900 leading-tight">Citizen Service Desk</h1>
-              <p className="text-xs text-slate-500 font-medium">Public Counter & Case Operations</p>
+              <p className="text-xs text-slate-500 font-medium">Public Counter Operations & Verification</p>
             </div>
           </div>
 
@@ -457,30 +543,80 @@ export default function App() {
             </button>
           </nav>
 
-          {/* Current User Badge */}
-          {currentUser ? (
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs text-slate-700">
-                {currentUser.full_name[0]}
+          {/* User & Notification Controls */}
+          <div className="flex items-center gap-3">
+            {currentUser && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition relative"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[10px] font-extrabold flex items-center justify-center animate-bounce">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Notifications Dropdown */}
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900">Notifications ({unreadCount} new)</span>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={handleMarkAllNotificationsRead}
+                          className="text-[11px] font-semibold text-sky-600 hover:text-sky-700"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-400">No notifications yet.</div>
+                      ) : (
+                        notifications.map((n) => (
+                          <div key={n.id} className={`p-3 text-xs transition ${n.is_read ? 'bg-white' : 'bg-sky-50/50'}`}>
+                            <p className="font-bold text-slate-900">{n.title}</p>
+                            <p className="text-slate-600 mt-0.5">{n.message}</p>
+                            <span className="text-[10px] text-slate-400 mt-1 block">
+                              {new Date(n.created_at).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="hidden sm:block text-right">
-                <p className="text-xs font-semibold text-slate-900">{currentUser.full_name}</p>
-                <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
-                  currentUser.role === 'SUPERVISOR' ? 'bg-rose-100 text-rose-700' :
-                  currentUser.role === 'OFFICER' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
-                }`}>
-                  {currentUser.role}
-                </span>
+            )}
+
+            {currentUser ? (
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-slate-800 to-slate-700 text-white flex items-center justify-center font-bold text-xs shadow-sm">
+                  {currentUser.full_name[0]}
+                </div>
+                <div className="hidden sm:block text-right">
+                  <p className="text-xs font-bold text-slate-900">{currentUser.full_name}</p>
+                  <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                    currentUser.role === 'SUPERVISOR' ? 'bg-rose-100 text-rose-700' :
+                    currentUser.role === 'OFFICER' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+                  }`}>
+                    {currentUser.role}
+                  </span>
+                </div>
               </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => handleFastLogin('citizen1@example.org', 'demo-password-1')}
-              className="text-sm font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1.5"
-            >
-              <LogIn className="w-4 h-4" /> Sign In
-            </button>
-          )}
+            ) : (
+              <button
+                onClick={() => handleFastLogin('citizen1@example.org', 'demo-password-1')}
+                className="text-sm font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1.5 bg-sky-50 px-3 py-1.5 rounded-xl"
+              >
+                <LogIn className="w-4 h-4" /> Sign In
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -490,16 +626,16 @@ export default function App() {
         {activeTab === 'track' && (
           <div className="space-y-10">
             {/* Hero / Tracking Search */}
-            <div className="bg-gradient-to-br from-sky-900 via-slate-900 to-indigo-950 rounded-3xl p-8 sm:p-12 text-white relative overflow-hidden shadow-xl">
+            <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 rounded-3xl p-8 sm:p-12 text-white relative overflow-hidden shadow-2xl">
               <div className="relative z-10 max-w-2xl">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/20 text-sky-300 text-xs font-semibold mb-4 border border-sky-400/20">
-                  <ShieldAlert className="w-3.5 h-3.5" /> Zero Personal Data Leakage
+                  <ShieldAlert className="w-3.5 h-3.5" /> High-Integrity State Machine • Zero PII Leakage
                 </div>
                 <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">
-                  Track Your Service Application
+                  Public Verification & Application Tracking
                 </h2>
                 <p className="text-slate-300 text-sm sm:text-base mb-8">
-                  Check live state machine progress and working-day SLA due dates directly from the official register with no login required.
+                  Track state machine progression, dynamic SLA pause times, and verify tamper-evident digital certificates directly from the official register.
                 </p>
 
                 <form onSubmit={handleTrackSubmit} className="flex gap-2">
@@ -532,7 +668,7 @@ export default function App() {
 
             {/* Public Tracking Result Card */}
             {trackResult && (
-              <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm animate-in fade-in duration-300">
+              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm animate-in fade-in duration-300">
                 <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-5 mb-6 gap-4">
                   <div>
                     <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Application Reference</span>
@@ -579,7 +715,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-sm">
                   <div>
                     <span className="text-slate-500 text-xs">Submitted Date:</span>
                     <p className="font-semibold text-slate-800">{new Date(trackResult.submitted_at).toLocaleString()}</p>
@@ -672,7 +808,7 @@ export default function App() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">Citizen Application Portal</h2>
-                <p className="text-sm text-slate-500">Manage submitted requests and booked appointment slots</p>
+                <p className="text-sm text-slate-500">Track files, upload verified documents, and manage counter appointments</p>
               </div>
               <div className="flex items-center gap-3">
                 <button
@@ -739,7 +875,7 @@ export default function App() {
                               onClick={() => handleViewRequest(req.id)}
                               className="text-xs font-bold text-sky-600 hover:text-sky-700 bg-sky-50 px-3 py-1.5 rounded-lg transition"
                             >
-                              View Details
+                              Manage & Docs
                             </button>
                           </td>
                         </tr>
@@ -804,7 +940,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">Officer Workstation</h2>
-                <p className="text-sm text-slate-500">Applications assigned to your counter for review, validation and dispatch</p>
+                <p className="text-sm text-slate-500">Review documents, inspect citizen uploads, and progress applications</p>
               </div>
               <button onClick={loadOfficerData} className="px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm">
                 <RefreshCw className="w-3.5 h-3.5" /> Refresh Queue
@@ -854,7 +990,7 @@ export default function App() {
                               onClick={() => handleViewRequest(req.id)}
                               className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition shadow-sm"
                             >
-                              Process File
+                              Verify & Process
                             </button>
                           </td>
                         </tr>
@@ -872,21 +1008,32 @@ export default function App() {
           <div className="space-y-8">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Supervisor Command Center</h2>
-                <p className="text-sm text-slate-500">Live SLA breach radar, delay scanning, and staff assignment</p>
+                <h2 className="text-2xl font-bold text-slate-900">Executive Command Center & Radar</h2>
+                <p className="text-sm text-slate-500">Real-time SLA analytics, automated delay detection, and caseload balancing</p>
               </div>
               <button
                 onClick={handleTriggerScan}
                 disabled={loading}
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-sm transition flex items-center gap-2 shadow-lg shadow-rose-600/20"
               >
-                <AlertTriangle className="w-4 h-4" /> Trigger SLA Delay Scan
+                <AlertTriangle className="w-4 h-4" /> Trigger Immediate SLA Scan
               </button>
             </div>
 
             {/* Radar Metric Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <div className="bg-white rounded-2xl p-6 border border-amber-200 bg-amber-50/20 shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs uppercase font-bold text-sky-600 tracking-wider">SLA Compliance</span>
+                  <Award className="w-5 h-5 text-sky-500" />
+                </div>
+                <div className="text-3xl font-extrabold text-slate-900">
+                  {analytics ? `${analytics.sla_compliance_rate}%` : '100%'}
+                </div>
+                <p className="text-xs text-slate-400 mt-1">On-time completed files</p>
+              </div>
+
+              <div className="bg-white rounded-2xl p-5 border border-amber-200 bg-amber-50/20 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs uppercase font-bold text-amber-600 tracking-wider">Due Soon (24h)</span>
                   <Clock className="w-5 h-5 text-amber-500" />
@@ -897,7 +1044,7 @@ export default function App() {
                 <p className="text-xs text-slate-500 mt-1">Files nearing target SLA deadline</p>
               </div>
 
-              <div className="bg-white rounded-2xl p-6 border border-rose-200 bg-rose-50/20 shadow-sm">
+              <div className="bg-white rounded-2xl p-5 border border-rose-200 bg-rose-50/20 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs uppercase font-bold text-rose-600 tracking-wider">Overdue</span>
                   <AlertCircle className="w-5 h-5 text-rose-500" />
@@ -905,10 +1052,10 @@ export default function App() {
                 <div className="text-3xl font-extrabold text-slate-900">
                   {delayReports.filter(r => r.level === 'OVERDUE').length}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">Past due files requiring attention</p>
+                <p className="text-xs text-slate-500 mt-1">Past due files requiring intervention</p>
               </div>
 
-              <div className="bg-white rounded-2xl p-6 border border-purple-200 bg-purple-50/20 shadow-sm">
+              <div className="bg-white rounded-2xl p-5 border border-purple-200 bg-purple-50/20 shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs uppercase font-bold text-purple-600 tracking-wider">Escalated (&gt;48h)</span>
                   <ShieldAlert className="w-5 h-5 text-purple-500" />
@@ -919,6 +1066,57 @@ export default function App() {
                 <p className="text-xs text-slate-500 mt-1">Critical SLA breach escalated to management</p>
               </div>
             </div>
+
+            {/* Officer Caseload & Service Performance Analytics */}
+            {analytics && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Officer Workload Distribution */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <TrendingUp className="w-5 h-5 text-sky-600" />
+                    <h3 className="font-bold text-slate-900 text-sm">Officer Caseload & Performance</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {analytics.officers.map((off) => (
+                      <div key={off.officer_id} className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                        <div className="flex items-center justify-between mb-1.5 font-bold text-slate-900">
+                          <span>{off.officer_name} ({off.email})</span>
+                          <span className="text-slate-500">{off.assigned_requests} total assigned</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-slate-600 text-[11px]">
+                          <span className="text-emerald-700 font-semibold">{off.completed_requests} completed</span>
+                          <span className={off.overdue_requests > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}>
+                            {off.overdue_requests} overdue
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Service Turnaround Analytics */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <BarChart3 className="w-5 h-5 text-indigo-600" />
+                    <h3 className="font-bold text-slate-900 text-sm">Service Turnaround Efficiency</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {analytics.services.map((svc) => (
+                      <div key={svc.service_code} className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-900">{svc.service_name}</p>
+                          <span className="text-slate-400 text-[11px]">{svc.total_requests} submitted ({svc.completed_requests} finished)</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-mono font-extrabold text-sky-700 text-sm">{svc.avg_completion_hours}h</span>
+                          <p className="text-[10px] text-slate-400">Avg completion time</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Active Delay Alerts List */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
@@ -932,7 +1130,7 @@ export default function App() {
 
               {alertsList.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-sm">
-                  No active alerts. Click "Trigger SLA Delay Scan" to scan the database.
+                  No active alerts. The continuous background daemon scans open requests every 60 seconds.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -987,66 +1185,14 @@ export default function App() {
                 </div>
               )}
             </div>
-
-            {/* Department Files Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-bold text-slate-900 text-base">All Department Requests</h3>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-slate-400 text-xs uppercase font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="px-6 py-3">Reference</th>
-                      <th className="px-6 py-3">Service</th>
-                      <th className="px-6 py-3">Status</th>
-                      <th className="px-6 py-3">Assigned To</th>
-                      <th className="px-6 py-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {requestsList.map((req) => (
-                      <tr key={req.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 font-mono font-bold text-slate-900">{req.reference}</td>
-                        <td className="px-6 py-4 font-medium text-slate-700">{req.service_name}</td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-bold ${
-                            req.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
-                            req.status === 'NEEDS_INFO' ? 'bg-amber-100 text-amber-800' :
-                            req.status === 'REJECTED' || req.status === 'CANCELLED' ? 'bg-rose-100 text-rose-800' :
-                            'bg-sky-100 text-sky-800'
-                          }`}>
-                            {req.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-xs font-medium text-slate-600">
-                          {req.assigned_officer_id ? `Officer #${req.assigned_officer_id}` : (
-                            <span className="text-amber-600 font-bold">Unassigned</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleViewRequest(req.id)}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition"
-                          >
-                            Inspect
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         )}
       </main>
 
-      {/* ===================== MODAL: REQUEST DETAILS & WORKFLOW TRANSITIONS ===================== */}
+      {/* ===================== MODAL: REQUEST DETAILS, ATTACHMENTS & CERTIFICATE ===================== */}
       {selectedRequest && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div>
@@ -1087,6 +1233,27 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Digital Certificate Download Banner (if COMPLETED) */}
+              {selectedRequest.status === 'COMPLETED' && (
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-900 to-slate-900 text-white flex items-center justify-between shadow-lg">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold uppercase tracking-wider">
+                      <Award className="w-4 h-4" /> Tamper-Evident Digital Certificate
+                    </div>
+                    <h4 className="font-bold text-base mt-0.5">Official Completion Document</h4>
+                    <p className="text-xs text-slate-300">Features cryptographic QR-code linking to public tracking</p>
+                  </div>
+                  <a
+                    href={api.getCertificateDownloadUrl(selectedRequest.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2 flex-shrink-0"
+                  >
+                    <Download className="w-4 h-4" /> Download PDF
+                  </a>
+                </div>
+              )}
+
               {/* Citizen & Officer details */}
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
@@ -1108,9 +1275,87 @@ export default function App() {
                 </div>
               )}
 
+              {/* Attached Documents & Upload Section */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs uppercase font-bold text-slate-400 tracking-wider">
+                    Attached Identity & Verification Documents
+                  </h4>
+                </div>
+
+                {/* Upload Form */}
+                <form onSubmit={handleDocumentUpload} className="mb-4 flex items-center gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={(e) => setSelectedFile(e.target.files[0])}
+                    className="text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!selectedFile || uploadingDoc}
+                    className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 ml-auto flex-shrink-0"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" /> Upload
+                  </button>
+                </form>
+
+                {/* Documents List */}
+                <div className="space-y-2">
+                  {requestDocuments.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No documents attached yet.</p>
+                  ) : (
+                    requestDocuments.map((doc) => (
+                      <div key={doc.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <FileCheck className="w-4 h-4 text-sky-600 flex-shrink-0" />
+                          <div>
+                            <p className="font-bold text-slate-900">{doc.filename}</p>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                              doc.status === 'VERIFIED' ? 'bg-emerald-100 text-emerald-800' :
+                              doc.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-600'
+                            }`}>
+                              {doc.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={api.getDocumentDownloadUrl(doc.id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sky-600 hover:text-sky-700 font-bold flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs"
+                          >
+                            <Download className="w-3 h-3" /> View
+                          </a>
+
+                          {(currentUser?.role === 'OFFICER' || currentUser?.role === 'SUPERVISOR') && doc.status === 'PENDING' && (
+                            <>
+                              <button
+                                onClick={() => handleVerifyDocument(doc.id, 'VERIFIED')}
+                                className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg font-bold text-xs hover:bg-emerald-500"
+                              >
+                                Verify
+                              </button>
+                              <button
+                                onClick={() => handleVerifyDocument(doc.id, 'REJECTED')}
+                                className="px-2.5 py-1 bg-rose-600 text-white rounded-lg font-bold text-xs hover:bg-rose-500"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
               {/* State Machine Action Buttons */}
-              <div className="pt-2">
-                <h4 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2.5">Available Transitions</h4>
+              <div className="pt-2 border-t border-slate-100">
+                <h4 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2.5">Workflow Actions</h4>
                 <div className="flex flex-wrap gap-2">
                   {currentUser?.role === 'SUPERVISOR' && (
                     <button
@@ -1183,7 +1428,7 @@ export default function App() {
               </div>
 
               {/* Event Audit History Timeline */}
-              <div className="pt-2">
+              <div className="pt-2 border-t border-slate-100">
                 <h4 className="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3">Immutable Audit Trail</h4>
                 <div className="space-y-3 relative before:absolute before:inset-0 before:left-3 before:w-0.5 before:bg-slate-200">
                   {requestEvents.map((evt) => (

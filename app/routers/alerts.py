@@ -79,3 +79,13 @@ def acknowledge_delay_alert(
             status_code=e.status_code,
             detail={"code": e.code, "message": e.message},
         )
+
+
+@router.get("/reports/analytics")
+def get_analytics(
+    current_user: User = Depends(require_role(ROLE_SUPERVISOR)),
+    db: Session = Depends(get_db),
+):
+    from app.services.analytics_service import compute_executive_analytics
+
+    return compute_executive_analytics(db=db)

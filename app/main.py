@@ -1,20 +1,58 @@
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.database import Base, engine
-from app.routers import alerts, appointments, auth, catalogue, public, requests
+from app.database import Base, SessionLocal, engine
+from app.routers import (
+    alerts,
+    appointments,
+    auth,
+    catalogue,
+    documents,
+    notifications,
+    public,
+    requests,
+)
+from app.services.alert_service import scan_and_create_alerts
+
+logger = logging.getLogger("uvicorn.info")
+
+
+def _scheduled_sla_scan():
+    db = SessionLocal()
+    try:
+        scanned, new_count, _ = scan_and_create_alerts(db)
+        if new_count > 0:
+            logger.info(
+                f"[SLA Daemon] Detected {new_count} new delay alerts across {scanned} requests."
+            )
+    except Exception as e:
+        logger.error(f"[SLA Daemon] Error during background scan: {e}")
+    finally:
+        db.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create DB tables if they don't exist
     Base.metadata.create_all(bind=engine)
+
+    # Start automated continuous background SLA scanner (every 60s)
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_scheduled_sla_scan, "interval", seconds=60, id="sla_continuous_scan")
+    scheduler.start()
+    logger.info("[SLA Daemon] Continuous background scheduler started.")
+
     yield
+
+    scheduler.shutdown(wait=False)
 
 
 def create_app() -> FastAPI:
@@ -94,13 +132,13 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(catalogue.router)
     app.include_router(requests.router)
+    app.include_router(documents.router)
+    app.include_router(notifications.router)
     app.include_router(public.router)
     app.include_router(appointments.router)
     app.include_router(alerts.router)
 
     # Mount static frontend build if present
-    import os
-
     from fastapi.staticfiles import StaticFiles
 
     frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")

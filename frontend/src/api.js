@@ -84,4 +84,37 @@ export const api = {
     return request(`/alerts${q}`);
   },
   ackAlert: (id) => request(`/alerts/${id}/ack`, { method: 'POST' }),
+
+  // Documents
+  uploadDocument: async (requestId, file) => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/requests/${requestId}/documents`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error?.message || 'Failed to upload document');
+    return data;
+  },
+  getRequestDocuments: (requestId) => request(`/requests/${requestId}/documents`),
+  verifyDocument: (documentId, status, review_comment) => request(`/documents/${documentId}/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ status, review_comment }),
+  }),
+  getDocumentDownloadUrl: (documentId) => `${API_BASE}/documents/${documentId}/download`,
+
+  // Notifications
+  getNotifications: (unreadOnly = false) => request(`/notifications?unread_only=${unreadOnly}`),
+  readNotification: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),
+  readAllNotifications: () => request('/notifications/read-all', { method: 'POST' }),
+
+  // Analytics & Certificate
+  getExecutiveAnalytics: () => request('/reports/analytics'),
+  getCertificateDownloadUrl: (requestId) => `${API_BASE}/requests/${requestId}/certificate`,
 };
+

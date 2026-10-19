@@ -194,3 +194,29 @@ def transition_request(
             status_code=e.status_code,
             detail={"code": e.code, "message": e.message},
         )
+
+
+@router.get("/requests/{id}/certificate")
+def download_certificate(
+    id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    from app.services.certificate_service import get_request_certificate_bytes
+
+    try:
+        req, pdf_bytes = get_request_certificate_bytes(db, id, current_user)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="certificate_{req.reference}.pdf"'
+            },
+        )
+    except RequestServiceError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"code": e.code, "message": e.message},
+        )

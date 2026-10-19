@@ -164,6 +164,17 @@ def assign_request_officer(
         created_at=now,
     )
     db.add(event)
+
+    from app.services.notification_service import create_notification
+
+    create_notification(
+        db=db,
+        user_id=officer.id,
+        title="New Casework Assigned",
+        message=f"You have been assigned to service request {req.reference}.",
+        link=f"/requests/{req.id}",
+    )
+
     db.commit()
     db.refresh(req)
     return req
@@ -220,6 +231,35 @@ def transition_service_request(
         created_at=now,
     )
     db.add(event)
+
+    from app.services.notification_service import create_notification
+    from app.services.workflow import STATUS_APPROVED, STATUS_COMPLETED
+
+    if to_status == STATUS_NEEDS_INFO:
+        create_notification(
+            db=db,
+            user_id=req.citizen_id,
+            title="Action Required: Information Requested",
+            message=f"Counter officer requested info on {req.reference}: {reason or 'Please review'}",
+            link=f"/requests/{req.id}",
+        )
+    elif to_status == STATUS_APPROVED:
+        create_notification(
+            db=db,
+            user_id=req.citizen_id,
+            title="Application Approved",
+            message=f"Great news! Your request {req.reference} was approved.",
+            link=f"/requests/{req.id}",
+        )
+    elif to_status == STATUS_COMPLETED:
+        create_notification(
+            db=db,
+            user_id=req.citizen_id,
+            title="Application Completed",
+            message=f"Your request {req.reference} is completed. You can now download your digital certificate.",
+            link=f"/requests/{req.id}",
+        )
+
     db.commit()
     db.refresh(req)
     return req

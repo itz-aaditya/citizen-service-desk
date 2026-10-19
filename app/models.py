@@ -112,6 +112,9 @@ class ServiceRequest(Base):
     alerts: Mapped[List["DelayAlert"]] = relationship(
         "DelayAlert", back_populates="request", cascade="all, delete-orphan"
     )
+    documents: Mapped[List["RequestDocument"]] = relationship(
+        "RequestDocument", back_populates="request", cascade="all, delete-orphan"
+    )
 
 
 class RequestEvent(Base):
@@ -170,3 +173,37 @@ class DelayAlert(Base):
 
     request: Mapped["ServiceRequest"] = relationship("ServiceRequest", back_populates="alerts")
     acknowledged_by: Mapped[Optional["User"]] = relationship("User")
+
+
+class RequestDocument(Base):
+    __tablename__ = "request_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    request_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("service_requests.id"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(50), default="PENDING", nullable=False
+    )  # PENDING, VERIFIED, REJECTED
+    review_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    request: Mapped["ServiceRequest"] = relationship("ServiceRequest", back_populates="documents")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    link: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped["User"] = relationship("User")

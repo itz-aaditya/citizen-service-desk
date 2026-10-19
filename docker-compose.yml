@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: citizen_service_desk_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://sdoc_user:sdoc_pass@db:5432/sdoc_db
+      - SECRET_KEY=enterprise-secure-secret-key-32-bytes-replace
+      - TOKEN_TTL_MINUTES=60
+      - PASSWORD_ITERATIONS=600000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+
+  db:
+    image: postgres:16-alpine
+    container_name: citizen_service_desk_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=sdoc_user
+      - POSTGRES_PASSWORD=sdoc_pass
+      - POSTGRES_DB=sdoc_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdoc_user -d sdoc_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  uploads_data:
+

@@ -209,3 +209,63 @@ class ScanAlertsResponse(BaseModel):
     scanned_requests: int
     new_alerts: int
     alerts: List[DelayAlertResponse]
+
+
+# Document Schemas
+class DocumentResponse(BaseModel):
+    id: int
+    request_id: int
+    filename: str
+    file_type: str
+    file_size: int
+    status: str
+    review_comment: Optional[str] = None
+    uploaded_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class VerifyDocumentRequest(BaseModel):
+    status: str  # VERIFIED or REJECTED
+    review_comment: Optional[str] = None
+
+
+# Notification Schemas
+class NotificationResponse(BaseModel):
+    id: int
+    user_id: int
+    title: str
+    message: str
+    link: Optional[str] = None
+    is_read: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Executive Analytics Schemas
+class ServiceMetric(BaseModel):
+    service_code: str
+    service_name: str
+    total_requests: int
+    completed_requests: int
+    avg_completion_hours: float
+
+
+class OfficerMetric(BaseModel):
+    officer_id: int
+    officer_name: str
+    email: str
+    assigned_requests: int
+    completed_requests: int
+    overdue_requests: int
+
+
+class ExecutiveAnalyticsResponse(BaseModel):
+    total_requests: int
+    completed_requests: int
+    pending_requests: int
+    overdue_requests: int
+    sla_compliance_rate: float
+    services: List[ServiceMetric]
+    officers: List[OfficerMetric]
