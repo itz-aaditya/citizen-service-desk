@@ -1,19 +1,25 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import ServiceRequest
 from app.schemas import OfficeAvailabilityResponse, PublicTrackResponse
 from app.services.appointment_service import get_office_availability
+from app.services.rate_limiter import limiter
 from app.services.scheduling import SchedulingError
 
 router = APIRouter(tags=["Public"])
 
 
 @router.get("/track/{reference}", response_model=PublicTrackResponse)
-def track_reference(reference: str, db: Session = Depends(get_db)):
+def track_reference(
+    request: Request,
+    reference: str = Path(..., min_length=1, max_length=50),
+    db: Session = Depends(get_db),
+):
+    limiter.check(request, max_requests=60, window_seconds=60)
     req = db.query(ServiceRequest).filter(ServiceRequest.reference == reference).first()
     if not req:
         raise HTTPException(

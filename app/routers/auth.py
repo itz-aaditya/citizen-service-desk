@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,15 +9,17 @@ from app.security import (
     get_current_user,
     hash_password,
     require_role,
-    verify_password,
+    verify_password_timing_safe,
 )
+from app.services.rate_limiter import limiter
 from app.services.workflow import ROLE_CITIZEN, ROLE_OFFICER, ROLE_SUPERVISOR
 
 router = APIRouter(tags=["Auth"])
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserRegister, db: Session = Depends(get_db)):
+def register(user_data: UserRegister, request: Request, db: Session = Depends(get_db)):
+    limiter.check(request, max_requests=30, window_seconds=60)
     existing = db.query(User).filter(User.email == user_data.email).first()
     if existing:
         raise HTTPException(
@@ -38,9 +40,14 @@ def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(login_data: UserLogin, db: Session = Depends(get_db)):
+def login(login_data: UserLogin, request: Request, db: Session = Depends(get_db)):
+    limiter.check(request, max_requests=30, window_seconds=60)
     user = db.query(User).filter(User.email == login_data.email).first()
-    if not user or not verify_password(login_data.password, user.hashed_password):
+    # Timing-safe verification prevents account enumeration through response time latency
+    password_valid = verify_password_timing_safe(
+        login_data.password, user.hashed_password if user else None
+    )
+    if not user or not password_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "invalid_credentials", "message": "Invalid email or password"},

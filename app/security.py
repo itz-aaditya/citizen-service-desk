@@ -48,6 +48,21 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
+# Static dummy hash generated at initialization to guarantee constant-time verification on non-existent accounts
+_DUMMY_PASSWORD_HASH = hash_password(
+    "dummy-account-timing-attack-protection-secret", iterations=1000
+)
+
+
+def verify_password_timing_safe(plain_password: str, hashed_password: Optional[str]) -> bool:
+    """Timing-safe password verification that prevents user enumeration via response latency."""
+    if not hashed_password:
+        # Perform dummy PBKDF2 hash computation so response time matches an existing user
+        verify_password(plain_password, _DUMMY_PASSWORD_HASH)
+        return False
+    return verify_password(plain_password, hashed_password)
+
+
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     now = datetime.now(timezone.utc)

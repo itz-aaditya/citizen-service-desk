@@ -23,19 +23,19 @@ class ErrorResponse(BaseModel):
 # Auth Schemas
 class UserRegister(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
-    full_name: str = Field(min_length=1)
+    password: str = Field(min_length=6, max_length=128)
+    full_name: str = Field(min_length=1, max_length=100)
 
 
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=128)
 
 
 class CreateStaffRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
-    full_name: str = Field(min_length=1)
+    password: str = Field(min_length=6, max_length=128)
+    full_name: str = Field(min_length=1, max_length=100)
     role: str = Field(description="OFFICER or SUPERVISOR")
 
 
@@ -93,8 +93,8 @@ class OfficeAvailabilityResponse(BaseModel):
 
 # Service Request Schemas
 class CreateServiceRequest(BaseModel):
-    service_code: str
-    notes: Optional[str] = None
+    service_code: str = Field(min_length=1, max_length=50)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class ServiceRequestListItem(BaseModel):
@@ -134,8 +134,8 @@ class AssignOfficerRequest(BaseModel):
 
 
 class TransitionRequest(BaseModel):
-    to_status: str
-    reason: Optional[str] = None
+    to_status: str = Field(min_length=3, max_length=50)
+    reason: Optional[str] = Field(default=None, max_length=1000)
 
 
 class RequestEventResponse(BaseModel):
@@ -226,8 +226,8 @@ class DocumentResponse(BaseModel):
 
 
 class VerifyDocumentRequest(BaseModel):
-    status: str  # VERIFIED or REJECTED
-    review_comment: Optional[str] = None
+    status: str = Field(min_length=3, max_length=20)  # VERIFIED or REJECTED
+    review_comment: Optional[str] = Field(default=None, max_length=1000)
 
 
 # Notification Schemas

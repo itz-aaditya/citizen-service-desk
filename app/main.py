@@ -8,7 +8,9 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.routers import (
     alerts,
@@ -23,6 +25,20 @@ from app.routers import (
 from app.services.alert_service import scan_and_create_alerts
 
 logger = logging.getLogger("uvicorn.info")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """OWASP-compliant defensive security response headers."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        return response
 
 
 def _scheduled_sla_scan():
@@ -41,6 +57,10 @@ def _scheduled_sla_scan():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Production secret key verification
+    if settings.ENVIRONMENT == "production" and "dev-secret-key" in settings.SECRET_KEY:
+        raise RuntimeError("FATAL: Insecure SECRET_KEY detected in production environment!")
+
     # Create DB tables if they don't exist
     Base.metadata.create_all(bind=engine)
 
@@ -63,6 +83,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Security Headers Middleware
+    app.add_middleware(SecurityHeadersMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -84,6 +107,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": error_body},
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

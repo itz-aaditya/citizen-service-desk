@@ -8,6 +8,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import Office, Service, User
 from app.security import create_access_token, hash_password
+from app.services.rate_limiter import limiter
 from app.services.workflow import ROLE_CITIZEN, ROLE_OFFICER, ROLE_SUPERVISOR
 
 # In-memory SQLite for testing
@@ -34,6 +35,8 @@ def db_session():
 
 @pytest.fixture(scope="function")
 def client(db_session):
+    limiter.reset()
+
     def override_get_db():
         try:
             yield db_session
@@ -44,6 +47,7 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    limiter.reset()
 
 
 @pytest.fixture(scope="function")

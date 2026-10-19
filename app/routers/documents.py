@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.services.document_service import (
     save_request_document,
     verify_request_document,
 )
+from app.services.rate_limiter import limiter
 from app.services.request_service import RequestServiceError
 from app.services.workflow import ROLE_OFFICER, ROLE_SUPERVISOR
 
@@ -28,10 +29,12 @@ router = APIRouter(tags=["Documents"])
 )
 async def upload_document(
     id: int,
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    limiter.check(request, max_requests=30, window_seconds=60)
     try:
         content = await file.read()
         doc = save_request_document(
