@@ -118,3 +118,4 @@ export function getNepalDateTime(inputDate = new Date()) {
     bsDateEnglish,
   };
 }
+
