@@ -470,6 +470,20 @@ export default function App() {
     }
   };
 
+  // Acknowledge Statutory Alert
+  const handleAcknowledgeAlert = async (alertId) => {
+    try {
+      setLoading(true);
+      await api.ackAlert(alertId);
+      showToast('Statutory alert acknowledged successfully');
+      loadSupervisorData();
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   const getStatusBadge = (status) => {
@@ -1282,39 +1296,129 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {delayReports.map((d) => (
-                        <tr key={d.reference} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                          <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">{d.reference}</td>
-                          <td className="py-3.5 px-4 font-medium text-slate-700 dark:text-slate-300">{d.service_name}</td>
-                          <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400">{new Date(d.due_date).toLocaleDateString()}</td>
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {d.delay_levels.map((lvl) => (
+                      {delayReports.map((d) => {
+                        const level = d.level || (Array.isArray(d.delay_levels) ? d.delay_levels[0] : 'OVERDUE');
+                        return (
+                          <tr key={d.reference} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">{d.reference}</td>
+                            <td className="py-3.5 px-4 font-medium text-slate-700 dark:text-slate-300">{d.service_name}</td>
+                            <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400">{new Date(d.due_date).toLocaleDateString()}</td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span
-                                  key={lvl}
                                   className={`px-2.5 py-0.5 rounded text-[11px] font-bold ${
-                                    lvl === 'CRITICAL_200'
+                                    level === 'ESCALATED' || level === 'CRITICAL_200'
                                       ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 animate-pulse'
-                                      : lvl === 'BREACH_100'
+                                      : level === 'OVERDUE' || level === 'BREACH_100'
                                       ? 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
                                       : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
                                   }`}
                                 >
-                                  {lvl}
+                                  {level}
                                 </span>
-                              ))}
-                            </div>
+                                {d.delay_hours > 0 && (
+                                  <span className="text-[11px] font-mono text-rose-600 dark:text-rose-400 font-semibold">
+                                    +{d.delay_hours}h overdue
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <button
+                                onClick={async () => {
+                                  let found = requestsList.find(r => r.reference === d.reference);
+                                  if (!found && d.request_id) {
+                                    try {
+                                      found = await api.getRequestDetail(d.request_id);
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  }
+                                  if (found) openRequestDetail(found);
+                                }}
+                                className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs"
+                              >
+                                Inspect
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Statutory Alerts Log & Acknowledgement */}
+            <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-500" />
+                    Statutory Delay Alerts Log
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Formal breach notifications requiring supervisor acknowledgement</p>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-mono">
+                  {alertsList.filter(a => !a.acknowledged).length} Pending Ack
+                </span>
+              </div>
+
+              {alertsList.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No statutory delay alerts on record.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase font-semibold">
+                        <th className="py-3 px-4">Alert ID</th>
+                        <th className="py-3 px-4">Reference</th>
+                        <th className="py-3 px-4">Level</th>
+                        <th className="py-3 px-4">Logged At</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {alertsList.map((alt) => (
+                        <tr key={alt.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="py-3 px-4 font-mono text-slate-500">#{alt.id}</td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white">{alt.reference}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                              alt.level === 'ESCALATED'
+                                ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+                                : alt.level === 'OVERDUE'
+                                ? 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
+                                : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                            }`}>
+                              {alt.level}
+                            </span>
                           </td>
-                          <td className="py-3.5 px-4">
-                            <button
-                              onClick={() => {
-                                const found = requestsList.find(r => r.reference === d.reference);
-                                if (found) openRequestDetail(found);
-                              }}
-                              className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs"
-                            >
-                              Inspect
-                            </button>
+                          <td className="py-3 px-4 font-mono text-slate-500">{new Date(alt.created_at).toLocaleString()}</td>
+                          <td className="py-3 px-4">
+                            {alt.acknowledged ? (
+                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Acknowledged
+                              </span>
+                            ) : (
+                              <span className="text-amber-600 dark:text-amber-400 font-semibold inline-flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5 animate-spin" /> Unacknowledged
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {!alt.acknowledged && (
+                              <button
+                                onClick={() => handleAcknowledgeAlert(alt.id)}
+                                className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs transition shadow-sm"
+                              >
+                                Acknowledge
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1721,14 +1825,29 @@ export default function App() {
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assign Request to Officer</h3>
             <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Officer User ID</label>
-              <input
-                type="number"
-                value={assignOfficerId}
-                onChange={(e) => setAssignOfficerId(e.target.value)}
-                placeholder="e.g. 2"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
-              />
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Officer</label>
+              {analytics?.officers && analytics.officers.length > 0 ? (
+                <select
+                  value={assignOfficerId}
+                  onChange={(e) => setAssignOfficerId(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-medium"
+                >
+                  <option value="">Choose an Officer...</option>
+                  {analytics.officers.map((off) => (
+                    <option key={off.officer_id} value={off.officer_id}>
+                      {off.officer_name} ({off.email}) — {off.assigned_requests} active cases
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="number"
+                  value={assignOfficerId}
+                  onChange={(e) => setAssignOfficerId(e.target.value)}
+                  placeholder="e.g. 2"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                />
+              )}
             </div>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
