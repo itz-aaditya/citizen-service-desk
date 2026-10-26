@@ -5,53 +5,41 @@ import {
   AlertCircle,
   Calendar,
   Building2,
-  ShieldAlert,
   FileText,
-  UserCheck,
   Search,
   ArrowRight,
   RefreshCw,
   LogOut,
   LogIn,
   AlertTriangle,
-  PauseCircle,
   User,
-  PlusCircle,
+  Plus,
   X,
-  MapPin,
-  Check,
-  Users,
   Bell,
   Download,
-  UploadCloud,
   Award,
-  FileCheck,
-  BarChart3,
-  TrendingUp,
-  FileSpreadsheet,
-  ShieldCheck,
-  Sparkles,
   ExternalLink,
-  ChevronRight,
-  Eye,
-  CheckSquare,
-  XCircle,
-  Briefcase,
   Sun,
   Moon,
   Monitor,
-  Globe
+  Briefcase,
+  BarChart3,
+  Eye,
+  Check,
+  Pause,
 } from 'lucide-react';
 import { api, setToken, getToken } from './api';
 import { getNepalDateTime } from './nepaliDate';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('track'); // 'track', 'citizen', 'officer', 'supervisor'
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
 
-  // Theme state: 'light', 'dark', 'system'
+  // Tabs: 'track', 'citizen', 'officer', 'supervisor'
+  const [activeTab, setActiveTab] = useState('track');
+
+  // Theme: 'light', 'dark', 'system'
   const [theme, setTheme] = useState('system');
 
   // Nepal Live Time & Date state (AD & BS)
@@ -63,13 +51,16 @@ export default function App() {
   const [trackError, setTrackError] = useState('');
   const [trackingLoading, setTrackingLoading] = useState(false);
 
-  // Catalogue
+  // Lists & Data
   const [services, setServices] = useState([]);
   const [offices, setOffices] = useState([]);
-
-  // Data lists
   const [requestsList, setRequestsList] = useState([]);
   const [appointmentsList, setAppointmentsList] = useState([]);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [requestEvents, setRequestEvents] = useState([]);
+  const [requestDocuments, setRequestDocuments] = useState([]);
+
+  // Supervisor Telemetry
   const [alertsList, setAlertsList] = useState([]);
   const [delayReports, setDelayReports] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -78,13 +69,16 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Modals & Selection
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [requestEvents, setRequestEvents] = useState([]);
-  const [requestDocuments, setRequestDocuments] = useState([]);
-  const [showDetailModal, setShowDetailModal] = useState(false);
+  // Modals
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authFullName, setAuthFullName] = useState('');
+
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [showTransitionModal, setShowTransitionModal] = useState(false);
   const [transitionTarget, setTransitionTarget] = useState('');
   const [transitionReason, setTransitionReason] = useState('');
@@ -104,19 +98,12 @@ export default function App() {
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [docReviewComment, setDocReviewComment] = useState('');
 
-  // Auth Modal State
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authFullName, setAuthFullName] = useState('');
-
-  const showToast = (message, type = 'success') => {
+  const showToast = (message, type = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Theme setup and application
+  // Theme application
   useEffect(() => {
     const storedTheme = localStorage.getItem('sdoc_theme') || 'system';
     setTheme(storedTheme);
@@ -126,10 +113,19 @@ export default function App() {
   const applyTheme = (t) => {
     const root = document.documentElement;
     const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (t === 'dark' || (t === 'system' && isSystemDark)) {
+    if (t === 'dark') {
       root.classList.add('dark');
-    } else {
+      root.setAttribute('data-theme', 'dark');
+    } else if (t === 'light') {
       root.classList.remove('dark');
+      root.setAttribute('data-theme', 'light');
+    } else {
+      root.removeAttribute('data-theme');
+      if (isSystemDark) {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
     }
   };
 
@@ -139,7 +135,6 @@ export default function App() {
     applyTheme(newTheme);
   };
 
-  // Listen for system theme changes if in 'system' mode
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const listener = () => {
@@ -149,7 +144,7 @@ export default function App() {
     return () => mediaQuery.removeEventListener('change', listener);
   }, [theme]);
 
-  // Live ticking Nepal Clock & Date (AD & BS) every 1 second
+  // Live ticking Nepal Clock & Date
   useEffect(() => {
     const timer = setInterval(() => {
       setNepalTimeInfo(getNepalDateTime());
@@ -158,56 +153,40 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadUser();
-    loadCatalogue();
+    const token = getToken();
+    if (token) {
+      api.getMe()
+        .then((user) => {
+          setCurrentUser(user);
+          if (user.role === 'OFFICER') setActiveTab('officer');
+          else if (user.role === 'SUPERVISOR') setActiveTab('supervisor');
+          else setActiveTab('citizen');
+        })
+        .catch(() => {
+          setToken(null);
+          setCurrentUser(null);
+        });
+    }
+
+    api.getServices().then(setServices).catch(console.error);
+    api.getOffices().then(setOffices).catch(console.error);
   }, []);
 
   useEffect(() => {
     if (currentUser) {
       loadNotifications();
-      const interval = setInterval(loadNotifications, 20000);
-      return () => clearInterval(interval);
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (currentUser) {
-      if (activeTab === 'citizen') loadCitizenData();
-      if (activeTab === 'officer') loadOfficerData();
-      if (activeTab === 'supervisor') loadSupervisorData();
+      if (activeTab === 'citizen' && currentUser.role === 'CITIZEN') loadCitizenData();
+      if (activeTab === 'officer' && currentUser.role === 'OFFICER') loadOfficerData();
+      if (activeTab === 'supervisor' && currentUser.role === 'SUPERVISOR') loadSupervisorData();
     }
   }, [currentUser, activeTab]);
-
-  const loadUser = async () => {
-    const token = getToken();
-    if (!token) return;
-    try {
-      const user = await api.getMe();
-      setCurrentUser(user);
-    } catch {
-      setToken(null);
-      setCurrentUser(null);
-    }
-  };
-
-  const loadCatalogue = async () => {
-    try {
-      const [sList, oList] = await Promise.all([api.getServices(), api.getOffices()]);
-      setServices(sList || []);
-      setOffices(oList || []);
-      if (sList?.length > 0) setNewReqServiceCode(sList[0].code);
-      if (oList?.length > 0) setApptOfficeCode(oList[0].code);
-    } catch (e) {
-      console.error('Failed to load catalogue:', e);
-    }
-  };
 
   const loadNotifications = async () => {
     try {
       const data = await api.getNotifications();
       setNotifications(data || []);
     } catch (e) {
-      console.error('Failed to load notifications:', e);
+      console.error(e);
     }
   };
 
@@ -215,8 +194,8 @@ export default function App() {
     setLoading(true);
     try {
       const [reqs, appts] = await Promise.all([
-        api.getRequests(),
-        api.getAppointments()
+        api.getRequests().catch(() => []),
+        api.getAppointments().catch(() => [])
       ]);
       setRequestsList(reqs || []);
       setAppointmentsList(appts || []);
@@ -280,7 +259,7 @@ export default function App() {
     setToken(null);
     setCurrentUser(null);
     setActiveTab('track');
-    showToast('Signed out successfully');
+    showToast('Signed out');
   };
 
   const handleAuthSubmit = async (e) => {
@@ -299,8 +278,8 @@ export default function App() {
       setCurrentUser(user);
       setShowAuthModal(false);
       showToast(`Welcome, ${user.full_name}!`);
-      if (user.role === 'SUPERVISOR') setActiveTab('supervisor');
-      else if (user.role === 'OFFICER') setActiveTab('officer');
+      if (user.role === 'OFFICER') setActiveTab('officer');
+      else if (user.role === 'SUPERVISOR') setActiveTab('supervisor');
       else setActiveTab('citizen');
     } catch (e) {
       showToast(e.message, 'error');
@@ -309,7 +288,6 @@ export default function App() {
     }
   };
 
-  // Tracking
   const handleTrackSubmit = async (e) => {
     if (e) e.preventDefault();
     if (!trackRef.trim()) return;
@@ -317,8 +295,8 @@ export default function App() {
     setTrackError('');
     setTrackResult(null);
     try {
-      const data = await api.trackReference(trackRef.trim());
-      setTrackResult(data);
+      const res = await api.trackReference(trackRef.trim());
+      setTrackResult(res);
     } catch (e) {
       setTrackError(e.message || 'Reference not found');
     } finally {
@@ -326,7 +304,6 @@ export default function App() {
     }
   };
 
-  // Detail Modal
   const openRequestDetail = async (req) => {
     setSelectedRequest(req);
     setShowDetailModal(true);
@@ -342,12 +319,11 @@ export default function App() {
     }
   };
 
-  // Document Upload
   const handleUploadDocument = async (e) => {
     e.preventDefault();
     if (!selectedFile || !selectedRequest) return;
-    setUploadingDoc(true);
     try {
+      setUploadingDoc(true);
       await api.uploadDocument(selectedRequest.id, selectedFile);
       showToast('Document uploaded successfully');
       setSelectedFile(null);
@@ -360,11 +336,11 @@ export default function App() {
     }
   };
 
-  // Verify Document
-  const handleVerifyDocument = async (docId, status) => {
+  const handleVerifyDocument = async (docId, newStatus) => {
     try {
-      await api.verifyDocument(docId, status, docReviewComment || undefined);
-      showToast(`Document marked as ${status}`);
+      setLoading(true);
+      await api.verifyDocument(docId, newStatus, docReviewComment || undefined);
+      showToast(`Document ${newStatus.toLowerCase()}`);
       setDocReviewComment('');
       if (selectedRequest) {
         const docs = await api.getRequestDocuments(selectedRequest.id);
@@ -372,16 +348,18 @@ export default function App() {
       }
     } catch (e) {
       showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Submit New Request
   const handleCreateRequest = async (e) => {
     e.preventDefault();
+    if (!newReqServiceCode) return;
     try {
       setLoading(true);
       const res = await api.createRequest(newReqServiceCode, newReqNotes || undefined);
-      showToast(`Service request created: ${res.reference}`);
+      showToast(`Request submitted: ${res.reference}`);
       setShowNewRequestModal(false);
       setNewReqNotes('');
       loadCitizenData();
@@ -392,25 +370,25 @@ export default function App() {
     }
   };
 
-  // Book Appointment
-  const handleCheckAvailability = async (officeCode, date) => {
-    if (!officeCode || !date) return;
+  const handleCheckAvailability = async (code, day) => {
+    if (!code || !day) return;
     try {
-      const res = await api.getAvailability(officeCode, date);
-      setAvailableSlots(res?.slots || []);
+      const res = await api.getAvailability(code, day);
+      setAvailableSlots(res.slots || []);
     } catch (e) {
-      setAvailableSlots([]);
-      showToast(e.message, 'error');
+      console.error(e);
     }
   };
 
   const handleBookAppointment = async (e) => {
     e.preventDefault();
+    if (!apptOfficeCode || !apptDate || !apptSlot) return;
     try {
       setLoading(true);
       await api.bookAppointment(apptOfficeCode, apptDate, apptSlot);
-      showToast('Appointment booked successfully!');
+      showToast('Appointment booked successfully');
       setShowAppointmentModal(false);
+      setApptSlot('');
       loadCitizenData();
     } catch (e) {
       showToast(e.message, 'error');
@@ -419,7 +397,6 @@ export default function App() {
     }
   };
 
-  // Transition Request
   const handleTransition = async () => {
     if (!selectedRequest || !transitionTarget) return;
     try {
@@ -439,7 +416,6 @@ export default function App() {
     }
   };
 
-  // Assign Officer
   const handleAssignOfficer = async () => {
     if (!selectedRequest || !assignOfficerId) return;
     try {
@@ -456,7 +432,6 @@ export default function App() {
     }
   };
 
-  // Manual SLA Scan
   const handleManualScan = async () => {
     try {
       setLoading(true);
@@ -470,12 +445,11 @@ export default function App() {
     }
   };
 
-  // Acknowledge Statutory Alert
   const handleAcknowledgeAlert = async (alertId) => {
     try {
       setLoading(true);
       await api.ackAlert(alertId);
-      showToast('Statutory alert acknowledged successfully');
+      showToast('Statutory alert acknowledged');
       loadSupervisorData();
     } catch (e) {
       showToast(e.message, 'error');
@@ -486,132 +460,161 @@ export default function App() {
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'SUBMITTED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800"><span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>Submitted</span>;
-      case 'UNDER_REVIEW':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>Under Review</span>;
-      case 'NEEDS_INFO':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800"><PauseCircle className="w-3.5 h-3.5 text-amber-500" />Needs Info (Clock Paused)</span>;
-      case 'APPROVED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />Approved</span>;
-      case 'COMPLETED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800"><Award className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />Completed</span>;
-      case 'REJECTED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800"><XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />Rejected</span>;
-      case 'CANCELLED':
-        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">Cancelled</span>;
-      default:
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">{status}</span>;
+  /**
+   * Status dot presentation:
+   * 8px dot plus plain text:
+   * Escalated = var(--alert), Late = var(--late), Due soon = var(--due-soon), On track = var(--on-track).
+   */
+  const renderStatus = (status) => {
+    let dotColor = 'var(--on-track)';
+    let text = status;
+
+    if (status === 'ESCALATED' || status === 'CRITICAL_200') {
+      dotColor = 'var(--alert)';
+      text = 'Escalated';
+    } else if (status === 'OVERDUE' || status === 'BREACH_100' || status === 'Late') {
+      dotColor = 'var(--late)';
+      text = 'Late';
+    } else if (status === 'DUE_SOON' || status === 'NEEDS_INFO' || status === 'Due soon') {
+      dotColor = 'var(--due-soon)';
+      text = status === 'NEEDS_INFO' ? 'Needs info (clock paused)' : 'Due soon';
+    } else if (status === 'REJECTED' || status === 'CANCELLED') {
+      dotColor = 'var(--text-3)';
+      text = status === 'REJECTED' ? 'Rejected' : 'Cancelled';
+    } else if (status === 'SUBMITTED') {
+      dotColor = 'var(--on-track)';
+      text = 'Submitted';
+    } else if (status === 'UNDER_REVIEW') {
+      dotColor = 'var(--on-track)';
+      text = 'Under review';
+    } else if (status === 'APPROVED') {
+      dotColor = 'var(--on-track)';
+      text = 'Approved';
+    } else if (status === 'COMPLETED') {
+      dotColor = 'var(--on-track)';
+      text = 'Completed';
+    } else {
+      dotColor = 'var(--on-track)';
+      text = 'On track';
     }
+
+    return (
+      <span className="inline-flex items-center gap-2 text-xs font-normal" style={{ color: 'var(--text-1)' }}>
+        <span
+          className="status-dot flex-shrink-0"
+          style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: dotColor }}
+        />
+        <span>{text}</span>
+      </span>
+    );
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-mesh text-slate-800 dark:text-slate-100 transition-colors duration-200">
+    <div className="min-h-screen flex flex-col font-sans" style={{ backgroundColor: 'var(--page)', color: 'var(--text-1)' }}>
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-bounce">
-          <div className={`flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-2xl text-sm font-semibold border ${
-            toast.type === 'error'
-              ? 'bg-rose-900/95 text-rose-50 border-rose-700 shadow-rose-900/40'
-              : 'bg-slate-900/95 dark:bg-slate-800/95 text-white border-slate-700 shadow-slate-950/40'
-          }`}>
-            {toast.type === 'error' ? <AlertCircle className="w-5 h-5 text-rose-400" /> : <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-            {toast.message}
+        <div className="fixed bottom-4 right-4 z-50">
+          <div
+            className="p-3 text-xs font-sans max-w-sm flex items-center gap-2"
+            style={{
+              backgroundColor: 'var(--panel)',
+              border: '1px solid var(--border)',
+              color: toast.type === 'error' ? 'var(--alert)' : 'var(--text-1)'
+            }}
+          >
+            {toast.type === 'error' ? <AlertCircle className="w-4 h-4 flex-shrink-0" /> : <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
+            <span>{toast.message}</span>
           </div>
         </div>
       )}
 
-      {/* TOP GOVERNMENT & NEPAL TIME TELEMETRY BAR */}
-      <div className="bg-navy-950 text-slate-300 text-xs px-6 py-2 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
-        {/* Left: Live Nepal Clock (AD & BS) + Status */}
-        <div className="flex flex-wrap items-center gap-3 font-mono">
-          <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 px-3 py-1 rounded-lg text-slate-200 shadow-inner">
+      {/* TOP TELEMETRY BAR */}
+      <div
+        className="text-xs px-6 py-2.5 flex flex-wrap items-center justify-between gap-4"
+        style={{ backgroundColor: 'var(--panel)', borderBottom: '1px solid var(--border)', color: 'var(--text-2)' }}
+      >
+        {/* Left: Nepal Live Clock & Dual Calendar */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
             <span className="text-sm">🇳🇵</span>
-            <span className="font-bold text-amber-400">{nepalTimeInfo.time12}</span>
-            <span className="text-slate-500 font-sans">NPT</span>
-            <span className="text-slate-600">|</span>
-            <span className="text-emerald-400 font-sans font-medium">{nepalTimeInfo.bsDateDevanagari}</span>
-            <span className="text-slate-400 text-[11px] font-sans">({nepalTimeInfo.adDateShort} AD)</span>
+            <span className="font-mono font-medium" style={{ color: 'var(--text-1)' }}>{nepalTimeInfo.time12}</span>
+            <span className="text-xs" style={{ color: 'var(--text-3)' }}>NPT</span>
+            <span style={{ color: 'var(--divider)' }}>|</span>
+            <span style={{ color: 'var(--text-2)' }}>वि.सं. {nepalTimeInfo.bsDateDevanagari}</span>
+            <span className="font-mono" style={{ color: 'var(--text-3)' }}>({nepalTimeInfo.adDateShort} AD)</span>
           </div>
 
-          {/* Hamro Patro Calendar Direct Link */}
           <a
             href="https://www.hamropatro.com/calendar"
             target="_blank"
             rel="noopener noreferrer"
-            title="Open Nepali Bikram Sambat Calendar on Hamro Patro"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 text-xs font-semibold transition"
+            className="flex items-center gap-1 px-2 py-0.5 text-xs transition"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }}
           >
-            <Calendar className="w-3.5 h-3.5 text-red-400" />
-            <span>हाम्रो पात्रो (Hamro Patro)</span>
-            <ExternalLink className="w-3 h-3 opacity-70" />
+            <span>हाम्रो पात्रो</span>
+            <ExternalLink className="w-3 h-3 opacity-60" />
           </a>
-
-          <span className="hidden lg:flex items-center gap-1.5 text-emerald-400 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-            SLA Daemon Active
-          </span>
         </div>
 
-        {/* Right: Quick Demo Persona Switcher + Theme Mode Toggle */}
+        {/* Right: Demo Persona Selector & Theme Toggle */}
         <div className="flex items-center gap-3">
-          {/* Quick Demo Switcher */}
-          <div className="hidden sm:flex items-center gap-1.5 bg-slate-900/80 p-0.5 rounded-lg border border-slate-800">
-            <span className="text-slate-400 font-medium text-[11px] px-2">Demo:</span>
+          <div className="hidden sm:flex items-center gap-1">
+            <span className="text-xs mr-1" style={{ color: 'var(--text-3)' }}>Demo:</span>
             <button
               onClick={() => handleQuickDemoLogin('citizen1@example.org', 'citizen')}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition"
+              className="px-2 py-0.5 text-xs transition"
+              style={{ border: '1px solid var(--border)', backgroundColor: 'var(--panel)', color: 'var(--text-2)' }}
             >
-              👤 Citizen
+              Citizen
             </button>
             <button
               onClick={() => handleQuickDemoLogin('officer1@example.org', 'officer')}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition"
+              className="px-2 py-0.5 text-xs transition"
+              style={{ border: '1px solid var(--border)', backgroundColor: 'var(--panel)', color: 'var(--text-2)' }}
             >
-              👮 Officer
+              Officer
             </button>
             <button
               onClick={() => handleQuickDemoLogin('supervisor@example.org', 'supervisor')}
-              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition"
+              className="px-2 py-0.5 text-xs transition"
+              style={{ border: '1px solid var(--border)', backgroundColor: 'var(--panel)', color: 'var(--text-2)' }}
             >
-              👔 Supervisor
+              Supervisor
             </button>
           </div>
 
           {/* Theme Switcher: Light, Dark, System */}
-          <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs">
+          <div className="flex items-center" style={{ border: '1px solid var(--border)' }}>
             <button
               onClick={() => handleThemeChange('light')}
-              title="Light Mode"
-              className={`p-1.5 rounded-md transition ${
-                theme === 'light'
-                  ? 'bg-amber-500 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              title="Light"
+              className="p-1 transition"
+              style={{
+                backgroundColor: theme === 'light' ? 'var(--ink)' : 'transparent',
+                color: theme === 'light' ? 'var(--on-ink)' : 'var(--text-3)'
+              }}
             >
               <Sun className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => handleThemeChange('dark')}
-              title="Dark Mode"
-              className={`p-1.5 rounded-md transition ${
-                theme === 'dark'
-                  ? 'bg-brand-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              title="Dark"
+              className="p-1 transition"
+              style={{
+                backgroundColor: theme === 'dark' ? 'var(--ink)' : 'transparent',
+                color: theme === 'dark' ? 'var(--on-ink)' : 'var(--text-3)'
+              }}
             >
               <Moon className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => handleThemeChange('system')}
-              title="System Preference"
-              className={`p-1.5 rounded-md transition ${
-                theme === 'system'
-                  ? 'bg-slate-700 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              title="System"
+              className="p-1 transition"
+              style={{
+                backgroundColor: theme === 'system' ? 'var(--ink)' : 'transparent',
+                color: theme === 'system' ? 'var(--on-ink)' : 'var(--text-3)'
+              }}
             >
               <Monitor className="w-3.5 h-3.5" />
             </button>
@@ -619,34 +622,34 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main Glass Navbar */}
-      <header className="sticky top-0 z-40 glass-panel border-b border-slate-200/80 dark:border-slate-800/80 shadow-sm transition-colors duration-200">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between gap-6">
-          {/* Brand Logo */}
-          <div className="flex items-center gap-3.5 cursor-pointer" onClick={() => setActiveTab('track')}>
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-brand-700 to-brand-500 flex items-center justify-center text-white shadow-glow-primary">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
+      {/* MAIN HEADER */}
+      <header style={{ backgroundColor: 'var(--panel)', borderBottom: '1px solid var(--border)' }}>
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
+          {/* Brand */}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('track')}>
+            <Building2 className="w-5 h-5" style={{ color: 'var(--text-1)' }} />
             <div>
-              <div className="text-lg font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+              <div className="text-sm font-semibold tracking-tight" style={{ color: 'var(--text-1)' }}>
                 Citizen Service Desk
-                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-brand-100 dark:bg-brand-950 text-brand-700 dark:text-brand-300">Official</span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Public Service & SLA Processing Portal</p>
+              <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>
+                Public Service & SLA Counter
+              </div>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <nav className="hidden md:flex items-center gap-1.5 bg-slate-100/80 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/60 dark:border-slate-800/60">
+          <nav className="flex items-center gap-1 text-xs">
             <button
               onClick={() => setActiveTab('track')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                activeTab === 'track'
-                  ? 'bg-white dark:bg-slate-800 text-brand-700 dark:text-brand-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
-              }`}
+              className="px-3 py-1.5 transition font-medium"
+              style={{
+                backgroundColor: activeTab === 'track' ? 'var(--ink)' : 'transparent',
+                color: activeTab === 'track' ? 'var(--on-ink)' : 'var(--text-2)',
+                border: '1px solid',
+                borderColor: activeTab === 'track' ? 'var(--ink)' : 'var(--border)'
+              }}
             >
-              <Search className="w-4 h-4" />
               Public Tracking
             </button>
 
@@ -656,13 +659,14 @@ export default function App() {
                   if (!currentUser) setShowAuthModal(true);
                   else setActiveTab('citizen');
                 }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                  activeTab === 'citizen'
-                    ? 'bg-white dark:bg-slate-800 text-brand-700 dark:text-brand-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
-                }`}
+                className="px-3 py-1.5 transition font-medium"
+                style={{
+                  backgroundColor: activeTab === 'citizen' ? 'var(--ink)' : 'transparent',
+                  color: activeTab === 'citizen' ? 'var(--on-ink)' : 'var(--text-2)',
+                  border: '1px solid',
+                  borderColor: activeTab === 'citizen' ? 'var(--ink)' : 'var(--border)'
+                }}
               >
-                <User className="w-4 h-4" />
                 Citizen Portal
               </button>
             )}
@@ -670,13 +674,14 @@ export default function App() {
             {currentUser?.role === 'OFFICER' && (
               <button
                 onClick={() => setActiveTab('officer')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                  activeTab === 'officer'
-                    ? 'bg-white dark:bg-slate-800 text-brand-700 dark:text-brand-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
-                }`}
+                className="px-3 py-1.5 transition font-medium"
+                style={{
+                  backgroundColor: activeTab === 'officer' ? 'var(--ink)' : 'transparent',
+                  color: activeTab === 'officer' ? 'var(--on-ink)' : 'var(--text-2)',
+                  border: '1px solid',
+                  borderColor: activeTab === 'officer' ? 'var(--ink)' : 'var(--border)'
+                }}
               >
-                <Briefcase className="w-4 h-4" />
                 Officer Queue
               </button>
             )}
@@ -684,91 +689,70 @@ export default function App() {
             {currentUser?.role === 'SUPERVISOR' && (
               <button
                 onClick={() => setActiveTab('supervisor')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                  activeTab === 'supervisor'
-                    ? 'bg-white dark:bg-slate-800 text-brand-700 dark:text-brand-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-800/50'
-                }`}
+                className="px-3 py-1.5 transition font-medium"
+                style={{
+                  backgroundColor: activeTab === 'supervisor' ? 'var(--ink)' : 'transparent',
+                  color: activeTab === 'supervisor' ? 'var(--on-ink)' : 'var(--text-2)',
+                  border: '1px solid',
+                  borderColor: activeTab === 'supervisor' ? 'var(--ink)' : 'var(--border)'
+                }}
               >
-                <BarChart3 className="w-4 h-4" />
                 Supervisor Radar
               </button>
             )}
           </nav>
 
-          {/* User & Notification Controls */}
+          {/* Right Controls */}
           <div className="flex items-center gap-3">
             {currentUser && (
               <div className="relative">
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition"
+                  className="p-1.5 relative transition"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-2)' }}
                 >
-                  <Bell className="w-5 h-5" />
+                  <Bell className="w-4 h-4" />
                   {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 text-white text-[11px] font-bold flex items-center justify-center animate-pulse">
-                      {unreadCount}
-                    </span>
+                    <span
+                      className="absolute -top-1 -right-1 w-2 h-2 rounded-full"
+                      style={{ backgroundColor: 'var(--alert)' }}
+                    />
                   )}
                 </button>
 
-                {/* Notifications Dropdown */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-3 w-80 sm:w-96 rounded-2xl glass-panel shadow-2xl p-4 border border-slate-200 dark:border-slate-800 z-50">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                      <div className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
-                        <Bell className="w-4 h-4 text-brand-600 dark:text-brand-400" />
-                        In-App Notifications
-                        <span className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full font-semibold">
-                          {notifications.length}
-                        </span>
-                      </div>
+                  <div
+                    className="absolute right-0 mt-2 w-80 p-4 z-50 text-xs"
+                    style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}
+                  >
+                    <div className="flex items-center justify-between pb-2" style={{ borderBottom: '1px solid var(--divider)' }}>
+                      <span className="font-medium" style={{ color: 'var(--text-1)' }}>Notifications</span>
                       {unreadCount > 0 && (
                         <button
                           onClick={async () => {
                             await api.readAllNotifications();
                             loadNotifications();
                           }}
-                          className="text-xs text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+                          style={{ color: 'var(--text-3)' }}
+                          className="hover:underline"
                         >
                           Mark all read
                         </button>
                       )}
                     </div>
-
-                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 mt-2">
+                    <div className="max-h-60 overflow-y-auto mt-2 space-y-2">
                       {notifications.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-slate-400">
-                          No notifications yet.
-                        </div>
+                        <div className="py-4 text-center" style={{ color: 'var(--text-3)' }}>No notifications</div>
                       ) : (
                         notifications.map((n) => (
-                          <div
-                            key={n.id}
-                            className={`p-3 text-xs transition rounded-lg ${
-                              !n.is_read
-                                ? 'bg-brand-50/70 dark:bg-brand-950/40 font-medium'
-                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="font-semibold text-slate-800 dark:text-slate-200">{n.title}</span>
-                              {!n.is_read && (
-                                <button
-                                  onClick={async () => {
-                                    await api.readNotification(n.id);
-                                    loadNotifications();
-                                  }}
-                                  className="text-[11px] text-brand-600 dark:text-brand-400 font-bold hover:underline shrink-0"
-                                >
-                                  Read
-                                </button>
-                              )}
+                          <div key={n.id} className="py-2" style={{ borderBottom: '1px solid var(--divider)' }}>
+                            <div className="flex justify-between font-medium" style={{ color: 'var(--text-1)' }}>
+                              <span>{n.title}</span>
+                              <span className="font-mono text-[10px]" style={{ color: 'var(--text-3)' }}>
+                                {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
                             </div>
-                            <p className="text-slate-600 dark:text-slate-400 mt-1">{n.message}</p>
-                            <span className="text-[10px] text-slate-400 mt-1 block">
-                              {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
+                            <p className="mt-0.5" style={{ color: 'var(--text-2)' }}>{n.message}</p>
                           </div>
                         ))
                       )}
@@ -779,27 +763,24 @@ export default function App() {
             )}
 
             {currentUser ? (
-              <div className="flex items-center gap-3 bg-white dark:bg-slate-900 pl-3.5 pr-2 py-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm">
-                <div className="text-right">
-                  <div className="text-xs font-bold text-slate-900 dark:text-white leading-tight">{currentUser.full_name}</div>
-                  <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                    {currentUser.role}
-                  </span>
-                </div>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="font-medium" style={{ color: 'var(--text-1)' }}>{currentUser.full_name}</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>({currentUser.role})</span>
                 <button
                   onClick={handleLogout}
                   title="Sign out"
-                  className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
+                  className="p-1 transition"
+                  style={{ color: 'var(--text-3)' }}
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-3.5 h-3.5" />
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setShowAuthModal(true)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-700 text-white font-semibold text-sm shadow-md transition"
+                className="px-3 py-1.5 text-xs font-medium transition"
+                style={{ backgroundColor: 'var(--ink)', color: 'var(--on-ink)' }}
               >
-                <LogIn className="w-4 h-4" />
                 Sign In
               </button>
             )}
@@ -807,64 +788,60 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
-        {/* PUBLIC TRACKING VIEW */}
+      {/* MAIN CONTENT BODY */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8">
+        {/* TAB 1: PUBLIC TRACKING */}
         {activeTab === 'track' && (
-          <div className="space-y-10">
-            {/* Hero Search Section */}
-            <div className="relative rounded-3xl bg-gradient-to-br from-navy-900 via-navy-800 to-slate-900 text-white p-8 sm:p-14 overflow-hidden shadow-2xl border border-slate-800">
-              <div className="absolute -right-20 -bottom-20 w-96 h-96 bg-brand-500/10 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="absolute -left-20 -top-20 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-              <div className="relative z-10 max-w-2xl mx-auto text-center space-y-4">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/20 text-brand-300 text-xs font-semibold border border-brand-500/30">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Statutory Public Service Tracking
-                </div>
-                <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
-                  Track Your Application in Real-Time
+          <div className="space-y-6">
+            {/* Search Block */}
+            <div className="p-8 content-panel" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+              <div className="max-w-xl mx-auto space-y-4">
+                <h1 className="text-xl font-bold text-center" style={{ color: 'var(--text-1)' }}>
+                  Statutory Application Tracking
                 </h1>
-                <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                  Enter your official application reference number below to view instant milestone progress, due dates, and verified completion status without exposing citizen personal data.
+                <p className="text-xs text-center leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                  Enter your reference ID to inspect milestone status, SLA due dates, and completion certificates.
                 </p>
 
-                {/* Search Bar */}
-                <form onSubmit={handleTrackSubmit} className="mt-8 flex flex-col sm:flex-row gap-3 items-stretch">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="e.g. SR-2026-000001"
-                      value={trackRef}
-                      onChange={(e) => setTrackRef(e.target.value.toUpperCase())}
-                      className="w-full pl-12 pr-4 py-4 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-400 text-base font-semibold tracking-wide"
-                    />
-                  </div>
+                <form onSubmit={handleTrackSubmit} className="flex gap-2 pt-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. SR-2026-000001"
+                    value={trackRef}
+                    onChange={(e) => setTrackRef(e.target.value.toUpperCase())}
+                    className="flex-1 px-3 py-2 text-sm font-mono focus:outline-none"
+                    style={{
+                      backgroundColor: 'var(--panel)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-1)'
+                    }}
+                  />
                   <button
                     type="submit"
                     disabled={trackingLoading || !trackRef.trim()}
-                    className="px-8 py-4 rounded-2xl bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold text-base shadow-glow-primary transition disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="btn-ink px-4 py-2 text-xs flex items-center gap-1.5"
                   >
-                    {trackingLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : 'Inspect Status'}
-                    <ArrowRight className="w-5 h-5" />
+                    {trackingLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Inspect'}
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </form>
 
-                {/* Sample Reference Pills */}
-                <div className="pt-2 flex items-center justify-center gap-2 flex-wrap text-xs text-slate-400">
-                  <span>Try sample references:</span>
+                <div className="flex items-center justify-center gap-2 text-xs" style={{ color: 'var(--text-3)' }}>
+                  <span>Sample references:</span>
                   <button
                     type="button"
-                    onClick={() => { setTrackRef('SR-2026-000001'); setTimeout(() => handleTrackSubmit(), 100); }}
-                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-brand-300 font-mono transition"
+                    onClick={() => { setTrackRef('SR-2026-000001'); setTimeout(() => handleTrackSubmit(), 50); }}
+                    className="font-mono underline"
+                    style={{ color: 'var(--text-2)' }}
                   >
                     SR-2026-000001
                   </button>
+                  <span>•</span>
                   <button
                     type="button"
-                    onClick={() => { setTrackRef('SR-2026-000002'); setTimeout(() => handleTrackSubmit(), 100); }}
-                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-brand-300 font-mono transition"
+                    onClick={() => { setTrackRef('SR-2026-000002'); setTimeout(() => handleTrackSubmit(), 50); }}
+                    className="font-mono underline"
+                    style={{ color: 'var(--text-2)' }}
                   >
                     SR-2026-000002
                   </button>
@@ -872,471 +849,377 @@ export default function App() {
               </div>
             </div>
 
-            {/* NEPAL OFFICIAL TIME & DUAL CALENDAR (AD + BS) WIDGET */}
-            <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <span className="text-base">🇳🇵</span>
-                  नेपाल राष्ट्रिय समय तथा पात्रो (Nepal Standard Time & Calendar)
-                </div>
-                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white flex items-center gap-3">
-                  <span className="font-mono text-brand-600 dark:text-brand-400">{nepalTimeInfo.time12}</span>
-                  <span className="text-sm font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                    NPT (UTC+5:45)
-                  </span>
-                </div>
-                <div className="text-sm text-slate-600 dark:text-slate-300 pt-1 flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                    वि.सं.: {nepalTimeInfo.bsDateDevanagari} ({nepalTimeInfo.bsDateEnglish})
-                  </span>
-                  <span className="text-slate-400">|</span>
-                  <span className="text-slate-700 dark:text-slate-300">
-                    ई.सं.: {nepalTimeInfo.adDateFormatted} ({nepalTimeInfo.dayNameEn})
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  Public office statutory working hours: Sunday to Friday, 10:00 AM – 5:00 PM NPT. (Closed on Saturdays).
-                </p>
-              </div>
-
-              {/* Direct Hamro Patro Calendar CTA Button */}
-              <div>
-                <a
-                  href="https://www.hamropatro.com/calendar"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-bold text-sm shadow-md shadow-rose-900/20 transition active:scale-95"
-                >
-                  <Calendar className="w-4 h-4 text-white" />
-                  <span>हाम्रो पात्रो क्यालेन्डर (Hamro Patro)</span>
-                  <ExternalLink className="w-4 h-4 opacity-80" />
-                </a>
-              </div>
-            </div>
-
-            {/* Tracking Result Display */}
+            {/* Tracking Result */}
             {trackError && (
-              <div className="p-6 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 flex items-center gap-3">
-                <AlertCircle className="w-6 h-6 shrink-0" />
-                <span className="font-semibold">{trackError}</span>
+              <div
+                className="p-4 text-xs flex items-center gap-2"
+                style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--alert)', color: 'var(--alert)' }}
+              >
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{trackError}</span>
               </div>
             )}
 
             {trackResult && (
-              <div className="glass-panel p-8 sm:p-10 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl space-y-8 animate-fadeIn">
-                <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-200/80 dark:border-slate-800">
+              <div className="p-6 space-y-6" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+                <div className="flex items-center justify-between pb-4" style={{ borderBottom: '1px solid var(--divider)' }}>
                   <div>
-                    <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">Official Reference</span>
-                    <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono flex items-center gap-3">
-                      {trackResult.reference}
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Verified</span>
-                    </div>
+                    <span className="text-[11px] block" style={{ color: 'var(--text-3)' }}>Reference</span>
+                    <span className="text-lg font-mono font-bold" style={{ color: 'var(--text-1)' }}>{trackResult.reference}</span>
                   </div>
                   <div>
-                    {getStatusBadge(trackResult.status)}
+                    {renderStatus(trackResult.status)}
                   </div>
                 </div>
 
-                {/* 4-Step Visual Stepper */}
-                <div className="relative py-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {[
-                      { step: 'SUBMITTED', title: '1. Registered', desc: 'File lodged in system' },
-                      { step: 'UNDER_REVIEW', title: '2. Under Review', desc: 'Officer validation' },
-                      { step: 'APPROVED', title: '3. Approved', desc: 'Statutory verification' },
-                      { step: 'COMPLETED', title: '4. Completed', desc: 'Resolution & Certificate' },
-                    ].map((item, idx) => {
-                      const stages = ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'COMPLETED'];
-                      const currentIdx = stages.indexOf(trackResult.status);
-                      const isPast = currentIdx >= idx;
-                      const isCurrent = trackResult.status === item.step;
+                {/* 4-Step Stepper */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { step: 'SUBMITTED', title: '1. Registered' },
+                    { step: 'UNDER_REVIEW', title: '2. Under Review' },
+                    { step: 'APPROVED', title: '3. Approved' },
+                    { step: 'COMPLETED', title: '4. Completed' },
+                  ].map((item, idx) => {
+                    const stages = ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'COMPLETED'];
+                    const currentIdx = stages.indexOf(trackResult.status);
+                    const isPast = currentIdx >= idx;
 
-                      return (
-                        <div
-                          key={item.step}
-                          className={`p-4 rounded-2xl border transition ${
-                            isCurrent
-                              ? 'bg-brand-50/80 dark:bg-brand-950/40 border-brand-300 dark:border-brand-700 ring-2 ring-brand-400/30'
-                              : isPast
-                              ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
-                              : 'bg-white/40 dark:bg-slate-950/30 border-dashed border-slate-200 dark:border-slate-800 opacity-60'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                              isPast ? 'bg-brand-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                            }`}>
-                              {idx + 1}
-                            </span>
-                            <span className="font-bold text-sm text-slate-900 dark:text-white">{item.title}</span>
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 pl-8">{item.desc}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
+                    return (
+                      <div
+                        key={item.step}
+                        className="p-3 text-xs flex items-center gap-2"
+                        style={{
+                          backgroundColor: 'var(--panel)',
+                          border: '1px solid',
+                          borderColor: isPast ? 'var(--text-1)' : 'var(--divider)',
+                          color: isPast ? 'var(--text-1)' : 'var(--text-3)'
+                        }}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: isPast ? 'var(--on-track)' : 'var(--divider)' }}
+                        />
+                        <span className="font-medium">{item.title}</span>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* Details Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 p-6 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+                {/* Metadata */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 text-xs">
                   <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 block font-medium">Service Catalogue</span>
-                    <span className="text-sm font-bold text-slate-900 dark:text-white">{trackResult.service_name}</span>
+                    <span className="block" style={{ color: 'var(--text-3)' }}>Service</span>
+                    <span className="font-medium" style={{ color: 'var(--text-1)' }}>{trackResult.service_name}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 block font-medium">Lodged Date</span>
-                    <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">
-                      {new Date(trackResult.submitted_at).toLocaleDateString([], { dateStyle: 'medium' })}
+                    <span className="block" style={{ color: 'var(--text-3)' }}>Submitted Date</span>
+                    <span className="font-mono" style={{ color: 'var(--text-1)' }}>
+                      {new Date(trackResult.submitted_at).toLocaleDateString()}
                     </span>
                   </div>
                   <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 block font-medium">Target Statutory Due Date</span>
-                    <span className="text-sm font-bold text-brand-700 dark:text-brand-400 font-mono">
-                      {new Date(trackResult.due_date).toLocaleDateString([], { dateStyle: 'medium' })}
+                    <span className="block" style={{ color: 'var(--text-3)' }}>Statutory Due Date</span>
+                    <span className="font-mono font-medium" style={{ color: 'var(--text-1)' }}>
+                      {new Date(trackResult.due_date).toLocaleDateString()}
                     </span>
                   </div>
-                </div>
-
-                {/* Zero PII Notice */}
-                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>Public Privacy Guard: No citizen names, identification numbers, or contact details are exposed in public tracking.</span>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* CITIZEN PORTAL */}
+        {/* TAB 2: CITIZEN PORTAL */}
         {activeTab === 'citizen' && currentUser && (
-          <div className="space-y-8 animate-fadeIn">
-            {/* Welcome & Actions Header */}
-            <div className="flex flex-wrap items-center justify-between gap-4 p-8 rounded-3xl bg-gradient-to-r from-brand-600 to-brand-800 text-white shadow-xl">
+          <div className="space-y-6">
+            <div className="p-6 flex flex-wrap items-center justify-between gap-4" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-brand-200">Citizen Self-Service Portal</span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold mt-1">Hello, {currentUser.full_name}</h2>
-                <p className="text-sm text-brand-100 mt-1">Manage applications, submit supporting documents, and book counter appointments.</p>
+                <h2 className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Citizen Dashboard</h2>
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>Logged in as {currentUser.full_name}</p>
               </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setShowNewRequestModal(true)}
-                  className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white text-brand-800 hover:bg-brand-50 font-bold text-sm shadow-md transition active:scale-95"
-                >
-                  <PlusCircle className="w-4 h-4 text-brand-600" />
-                  New Request
+              <div className="flex gap-2">
+                <button onClick={() => setShowNewRequestModal(true)} className="btn-ink px-3 py-1.5 text-xs">
+                  + New Application
                 </button>
-                <button
-                  onClick={() => setShowAppointmentModal(true)}
-                  className="flex items-center gap-2 px-5 py-3 rounded-xl bg-brand-700/80 hover:bg-brand-700 text-white border border-brand-500/50 font-bold text-sm transition active:scale-95"
-                >
-                  <Calendar className="w-4 h-4" />
+                <button onClick={() => setShowAppointmentModal(true)} className="btn-outline px-3 py-1.5 text-xs">
                   Book Appointment
                 </button>
               </div>
             </div>
 
-            {/* Applications List */}
-            <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">My Service Applications</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Track and manage your submitted applications</p>
-                </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  {requestsList.length} Total
-                </span>
+            {/* Applications Table */}
+            <div style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+              <div className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--divider)' }}>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>My Applications</h3>
+                <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>{requestsList.length} total</span>
               </div>
 
               {requestsList.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-sm">
-                  You haven't submitted any service requests yet.
-                </div>
+                <div className="p-8 text-center text-xs" style={{ color: 'var(--text-3)' }}>No submitted applications on record.</div>
               ) : (
-                <div className="grid grid-cols-1 gap-4">
-                  {requestsList.map((req) => (
-                    <div
-                      key={req.id}
-                      className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-brand-300 dark:hover:border-brand-600 hover:shadow-md transition flex flex-wrap items-center justify-between gap-4"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">{req.reference}</span>
-                          {getStatusBadge(req.status)}
-                        </div>
-                        <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{req.service_name}</div>
-                        <div className="text-xs text-slate-400">
-                          Due Date: <span className="font-mono font-medium text-slate-600 dark:text-slate-300">{new Date(req.due_date).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {req.status === 'COMPLETED' && (
-                          <a
-                            href={api.getCertificateDownloadUrl(req.id)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm transition"
-                          >
-                            <Award className="w-3.5 h-3.5" />
-                            Certificate (PDF)
-                          </a>
-                        )}
-
-                        <button
-                          onClick={() => openRequestDetail(req)}
-                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          View File & Docs
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--divider)', color: 'var(--text-3)' }}>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Reference</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Service</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Due Date</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Status</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px] text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {requestsList.map((req) => (
+                        <tr key={req.id} style={{ borderBottom: '1px solid var(--divider)' }}>
+                          <td className="py-3 px-4 font-mono font-bold" style={{ color: 'var(--text-1)' }}>{req.reference}</td>
+                          <td className="py-3 px-4" style={{ color: 'var(--text-2)' }}>{req.service_name}</td>
+                          <td className="py-3 px-4 font-mono" style={{ color: 'var(--text-2)' }}>{new Date(req.due_date).toLocaleDateString()}</td>
+                          <td className="py-3 px-4">{renderStatus(req.status)}</td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {req.status === 'COMPLETED' && (
+                                <a
+                                  href={api.getCertificateDownloadUrl(req.id)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="underline text-xs"
+                                  style={{ color: 'var(--text-1)' }}
+                                >
+                                  Certificate
+                                </a>
+                              )}
+                              <button
+                                onClick={() => openRequestDetail(req)}
+                                className="underline text-xs"
+                                style={{ color: 'var(--text-1)' }}
+                              >
+                                View
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
 
-            {/* Appointments Section */}
-            <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">My Office Appointments</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Reserved counter attendance timeslots</p>
-                </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  {appointmentsList.length} Scheduled
-                </span>
+            {/* Appointments Table */}
+            <div style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+              <div className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--divider)' }}>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Scheduled Appointments</h3>
+                <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>{appointmentsList.length} booked</span>
               </div>
 
               {appointmentsList.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-sm">
-                  No appointments scheduled.
-                </div>
+                <div className="p-8 text-center text-xs" style={{ color: 'var(--text-3)' }}>No office appointments reserved.</div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {appointmentsList.map((a) => (
-                    <div key={a.id} className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-300 font-mono">
-                          {a.office_code}
-                        </span>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                          a.status === 'BOOKED' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                        }`}>
-                          {a.status}
-                        </span>
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm text-slate-800 dark:text-slate-200">{a.office_name}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-1 font-mono">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                          {a.appointment_date} | {a.slot_start} - {a.slot_end}
-                        </div>
-                      </div>
-                      {a.status === 'BOOKED' && (
-                        <button
-                          onClick={async () => {
-                            if (window.confirm('Cancel this appointment?')) {
-                              await api.cancelAppointment(a.id);
-                              showToast('Appointment cancelled');
-                              loadCitizenData();
-                            }
-                          }}
-                          className="w-full text-center py-1.5 rounded-lg border border-rose-200 dark:border-rose-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-semibold text-xs transition"
-                        >
-                          Cancel Appointment
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--divider)', color: 'var(--text-3)' }}>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Office</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Date</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Slot</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Status</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px] text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {appointmentsList.map((a) => (
+                        <tr key={a.id} style={{ borderBottom: '1px solid var(--divider)' }}>
+                          <td className="py-3 px-4" style={{ color: 'var(--text-1)' }}>{a.office_name} ({a.office_code})</td>
+                          <td className="py-3 px-4 font-mono" style={{ color: 'var(--text-2)' }}>{a.appointment_date}</td>
+                          <td className="py-3 px-4 font-mono" style={{ color: 'var(--text-2)' }}>{a.slot_start} - {a.slot_end}</td>
+                          <td className="py-3 px-4">{renderStatus(a.status === 'BOOKED' ? 'On track' : 'Cancelled')}</td>
+                          <td className="py-3 px-4 text-right">
+                            {a.status === 'BOOKED' && (
+                              <button
+                                onClick={async () => {
+                                  if (window.confirm('Cancel this appointment?')) {
+                                    await api.cancelAppointment(a.id);
+                                    showToast('Appointment cancelled');
+                                    loadCitizenData();
+                                  }
+                                }}
+                                className="underline"
+                                style={{ color: 'var(--alert)' }}
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* OFFICER QUEUE */}
+        {/* TAB 3: OFFICER QUEUE */}
         {activeTab === 'officer' && currentUser?.role === 'OFFICER' && (
-          <div className="space-y-8 animate-fadeIn">
-            <div className="flex items-center justify-between">
+          <div className="space-y-6">
+            <div className="p-6 flex items-center justify-between" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white">Assigned Processing Queue</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Service requests assigned to your desk for review and verification</p>
+                <h2 className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Assigned Queue</h2>
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>Files assigned to your counter</p>
               </div>
-              <button
-                onClick={loadOfficerData}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold shadow-sm transition"
-              >
+              <button onClick={loadOfficerData} className="btn-outline px-3 py-1.5 text-xs flex items-center gap-1.5">
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                Refresh Queue
+                Refresh
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
               {requestsList.length === 0 ? (
-                <div className="glass-panel p-12 text-center text-slate-400 text-sm rounded-3xl border border-slate-200 dark:border-slate-800">
-                  No active requests assigned to you.
-                </div>
+                <div className="p-8 text-center text-xs" style={{ color: 'var(--text-3)' }}>No active requests in queue.</div>
               ) : (
-                requestsList.map((req) => (
-                  <div
-                    key={req.id}
-                    className="glass-panel p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:shadow-md transition flex flex-wrap items-center justify-between gap-4"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-base font-extrabold text-slate-900 dark:text-white">{req.reference}</span>
-                        {getStatusBadge(req.status)}
-                      </div>
-                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{req.service_name}</div>
-                      <div className="text-xs text-slate-400">
-                        Statutory Due Date: <span className="font-mono font-medium text-slate-600 dark:text-slate-300">{new Date(req.due_date).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openRequestDetail(req)}
-                        className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-700 text-white font-semibold text-xs shadow-sm transition"
-                      >
-                        Inspect & Process
-                      </button>
-                    </div>
-                  </div>
-                ))
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--divider)', color: 'var(--text-3)' }}>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Reference</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Service</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Due Date</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Status</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px] text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {requestsList.map((req) => (
+                        <tr key={req.id} style={{ borderBottom: '1px solid var(--divider)' }}>
+                          <td className="py-3 px-4 font-mono font-bold" style={{ color: 'var(--text-1)' }}>{req.reference}</td>
+                          <td className="py-3 px-4" style={{ color: 'var(--text-2)' }}>{req.service_name}</td>
+                          <td className="py-3 px-4 font-mono" style={{ color: 'var(--text-2)' }}>{new Date(req.due_date).toLocaleDateString()}</td>
+                          <td className="py-3 px-4">{renderStatus(req.status)}</td>
+                          <td className="py-3 px-4 text-right">
+                            <button onClick={() => openRequestDetail(req)} className="btn-ink px-3 py-1 text-xs">
+                              Process
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
         )}
 
-        {/* SUPERVISOR RADAR & EXECUTIVE ANALYTICS */}
+        {/* TAB 4: SUPERVISOR RADAR */}
         {activeTab === 'supervisor' && currentUser?.role === 'SUPERVISOR' && (
-          <div className="space-y-8 animate-fadeIn">
-            {/* Header with Manual SLA Scan Trigger */}
-            <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="p-6 flex flex-wrap items-center justify-between gap-4" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white">Executive Command & Delay Radar</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Live statutory SLA compliance telemetry and delay alert escalation</p>
+                <h2 className="text-base font-bold" style={{ color: 'var(--text-1)' }}>Supervisor Command Radar</h2>
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>Statutory compliance telemetry and delay management</p>
               </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleManualScan}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                  Run SLA Scan
-                </button>
-              </div>
+              <button onClick={handleManualScan} className="btn-ink px-3 py-1.5 text-xs flex items-center gap-1.5">
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                Run SLA Scan
+              </button>
             </div>
 
-            {/* KPI Cards */}
+            {/* KPI Cards: Content blocks sit on var(--panel) with 1px var(--border). KPI numbers are var(--text-1). Only overdue count uses var(--alert). */}
             {analytics && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                <div className="glass-panel p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">SLA Compliance Rate</span>
-                  <div className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-2 font-mono">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-5" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+                  <span className="text-[11px] block uppercase" style={{ color: 'var(--text-3)' }}>SLA Compliance Rate</span>
+                  <div className="text-3xl font-mono font-bold mt-1" style={{ color: 'var(--text-1)' }}>
                     {analytics.sla_compliance_rate}%
                   </div>
-                  <span className="text-xs text-slate-400 mt-1 block">Resolved within business days</span>
+                  <span className="text-[11px] block mt-1" style={{ color: 'var(--text-3)' }}>Resolved on-time</span>
                 </div>
 
-                <div className="glass-panel p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">Total Applications</span>
-                  <div className="text-3xl font-extrabold text-slate-900 dark:text-white mt-2 font-mono">
+                <div className="p-5" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+                  <span className="text-[11px] block uppercase" style={{ color: 'var(--text-3)' }}>Total Applications</span>
+                  <div className="text-3xl font-mono font-bold mt-1" style={{ color: 'var(--text-1)' }}>
                     {analytics.total_requests}
                   </div>
-                  <span className="text-xs text-slate-400 mt-1 block">Completed: {analytics.completed_requests}</span>
+                  <span className="text-[11px] block mt-1" style={{ color: 'var(--text-3)' }}>Completed: {analytics.completed_requests}</span>
                 </div>
 
-                <div className="glass-panel p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">In-Progress Queue</span>
-                  <div className="text-3xl font-extrabold text-blue-600 dark:text-blue-400 mt-2 font-mono">
+                <div className="p-5" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+                  <span className="text-[11px] block uppercase" style={{ color: 'var(--text-3)' }}>In-Progress Queue</span>
+                  <div className="text-3xl font-mono font-bold mt-1" style={{ color: 'var(--text-1)' }}>
                     {analytics.pending_requests}
                   </div>
-                  <span className="text-xs text-slate-400 mt-1 block">Active files under review</span>
+                  <span className="text-[11px] block mt-1" style={{ color: 'var(--text-3)' }}>Active files</span>
                 </div>
 
-                <div className="glass-panel p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider block">Overdue Breaches</span>
-                  <div className="text-3xl font-extrabold text-rose-600 dark:text-rose-400 mt-2 font-mono">
+                <div className="p-5" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+                  <span className="text-[11px] block uppercase" style={{ color: 'var(--text-3)' }}>Overdue Breaches</span>
+                  <div className="text-3xl font-mono font-bold mt-1" style={{ color: 'var(--alert)' }}>
                     {analytics.overdue_requests}
                   </div>
-                  <span className="text-xs text-slate-400 mt-1 block">Requires supervisor intervention</span>
+                  <span className="text-[11px] block mt-1" style={{ color: 'var(--alert)' }}>Requires intervention</span>
                 </div>
               </div>
             )}
 
-            {/* Delay Reports Table */}
-            <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-              <div className="flex items-center justify-between">
+            {/* Delay Escalation Table: Table rows separated by 1px var(--divider). Overdue hours are mono text in var(--alert). */}
+            <div style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+              <div className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--divider)' }}>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Active Delay Escalation Radar</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Applications flagged by SLA scanner for attention</p>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Active Delay Escalation Radar</h3>
+                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>Applications flagged by statutory SLA scanner</p>
                 </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-mono">
-                  {delayReports.length} Flagged
-                </span>
+                <span className="text-xs font-mono" style={{ color: 'var(--alert)' }}>{delayReports.length} Flagged</span>
               </div>
 
               {delayReports.length === 0 ? (
-                <div className="py-8 text-center text-emerald-600 dark:text-emerald-400 text-sm font-semibold flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-5 h-5" />
-                  All active applications are currently operating within SLA targets!
+                <div className="p-8 text-center text-xs" style={{ color: 'var(--on-track)' }}>
+                  All active applications are currently operating within SLA targets.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase font-semibold">
-                        <th className="py-3 px-4">Reference</th>
-                        <th className="py-3 px-4">Service</th>
-                        <th className="py-3 px-4">Due Date</th>
-                        <th className="py-3 px-4">Delay Severity</th>
-                        <th className="py-3 px-4">Action</th>
+                      <tr style={{ borderBottom: '1px solid var(--divider)', color: 'var(--text-3)' }}>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Reference</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Service</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Due Date</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Severity & Hours</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px] text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    <tbody>
                       {delayReports.map((d) => {
                         const level = d.level || (Array.isArray(d.delay_levels) ? d.delay_levels[0] : 'OVERDUE');
                         return (
-                          <tr key={d.reference} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                            <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">{d.reference}</td>
-                            <td className="py-3.5 px-4 font-medium text-slate-700 dark:text-slate-300">{d.service_name}</td>
-                            <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400">{new Date(d.due_date).toLocaleDateString()}</td>
-                            <td className="py-3.5 px-4">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span
-                                  className={`px-2.5 py-0.5 rounded text-[11px] font-bold ${
-                                    level === 'ESCALATED' || level === 'CRITICAL_200'
-                                      ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 animate-pulse'
-                                      : level === 'OVERDUE' || level === 'BREACH_100'
-                                      ? 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
-                                      : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                                  }`}
-                                >
-                                  {level}
-                                </span>
+                          <tr key={d.reference} style={{ borderBottom: '1px solid var(--divider)' }}>
+                            <td className="py-3 px-4 font-mono font-bold" style={{ color: 'var(--text-1)' }}>{d.reference}</td>
+                            <td className="py-3 px-4" style={{ color: 'var(--text-2)' }}>{d.service_name}</td>
+                            <td className="py-3 px-4 font-mono" style={{ color: 'var(--text-2)' }}>{new Date(d.due_date).toLocaleDateString()}</td>
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2">
+                                {renderStatus(level)}
                                 {d.delay_hours > 0 && (
-                                  <span className="text-[11px] font-mono text-rose-600 dark:text-rose-400 font-semibold">
-                                    +{d.delay_hours}h overdue
+                                  <span className="font-mono text-xs" style={{ color: 'var(--alert)' }}>
+                                    +{Math.round(d.delay_hours)}h
                                   </span>
                                 )}
                               </div>
                             </td>
-                            <td className="py-3.5 px-4">
+                            <td className="py-3 px-4 text-right">
                               <button
                                 onClick={async () => {
                                   let found = requestsList.find(r => r.reference === d.reference);
                                   if (!found && d.request_id) {
                                     try {
                                       found = await api.getRequestDetail(d.request_id);
-                                    } catch (err) {
-                                      console.error(err);
-                                    }
+                                    } catch (err) {}
                                   }
                                   if (found) openRequestDetail(found);
                                 }}
-                                className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs"
+                                className="underline"
+                                style={{ color: 'var(--text-1)' }}
                               >
                                 Inspect
                               </button>
@@ -1351,70 +1234,51 @@ export default function App() {
             </div>
 
             {/* Statutory Alerts Log & Acknowledgement */}
-            <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-              <div className="flex items-center justify-between">
+            <div style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+              <div className="p-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--divider)' }}>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-500" />
-                    Statutory Delay Alerts Log
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Formal breach notifications requiring supervisor acknowledgement</p>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Statutory Delay Alerts Log</h3>
+                  <p className="text-xs" style={{ color: 'var(--text-3)' }}>Audit trail of formal breach alerts</p>
                 </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-mono">
+                <span className="text-xs font-mono" style={{ color: 'var(--text-2)' }}>
                   {alertsList.filter(a => !a.acknowledged).length} Pending Ack
                 </span>
               </div>
 
               {alertsList.length === 0 ? (
-                <div className="py-6 text-center text-slate-400 text-xs">
-                  No statutory delay alerts on record.
-                </div>
+                <div className="p-8 text-center text-xs" style={{ color: 'var(--text-3)' }}>No alerts logged.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 uppercase font-semibold">
-                        <th className="py-3 px-4">Alert ID</th>
-                        <th className="py-3 px-4">Reference</th>
-                        <th className="py-3 px-4">Level</th>
-                        <th className="py-3 px-4">Logged At</th>
-                        <th className="py-3 px-4">Status</th>
-                        <th className="py-3 px-4 text-right">Action</th>
+                      <tr style={{ borderBottom: '1px solid var(--divider)', color: 'var(--text-3)' }}>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">ID</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Reference</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Level</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Date</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px]">Status</th>
+                        <th className="py-2.5 px-4 font-medium uppercase text-[11px] text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    <tbody>
                       {alertsList.map((alt) => (
-                        <tr key={alt.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                          <td className="py-3 px-4 font-mono text-slate-500">#{alt.id}</td>
-                          <td className="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white">{alt.reference}</td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                              alt.level === 'ESCALATED'
-                                ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
-                                : alt.level === 'OVERDUE'
-                                ? 'bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300'
-                                : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                            }`}>
-                              {alt.level}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono text-slate-500">{new Date(alt.created_at).toLocaleString()}</td>
+                        <tr key={alt.id} style={{ borderBottom: '1px solid var(--divider)' }}>
+                          <td className="py-3 px-4 font-mono" style={{ color: 'var(--text-3)' }}>#{alt.id}</td>
+                          <td className="py-3 px-4 font-mono font-bold" style={{ color: 'var(--text-1)' }}>{alt.reference}</td>
+                          <td className="py-3 px-4">{renderStatus(alt.level)}</td>
+                          <td className="py-3 px-4 font-mono" style={{ color: 'var(--text-3)' }}>{new Date(alt.created_at).toLocaleDateString()}</td>
                           <td className="py-3 px-4">
                             {alt.acknowledged ? (
-                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Acknowledged
-                              </span>
+                              <span style={{ color: 'var(--on-track)' }}>Acknowledged</span>
                             ) : (
-                              <span className="text-amber-600 dark:text-amber-400 font-semibold inline-flex items-center gap-1">
-                                <Clock className="w-3.5 h-3.5 animate-spin" /> Unacknowledged
-                              </span>
+                              <span style={{ color: 'var(--alert)' }}>Unacknowledged</span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-right">
                             {!alt.acknowledged && (
                               <button
                                 onClick={() => handleAcknowledgeAlert(alt.id)}
-                                className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs transition shadow-sm"
+                                className="btn-ink px-2.5 py-1 text-xs"
                               >
                                 Acknowledge
                               </button>
@@ -1430,25 +1294,31 @@ export default function App() {
 
             {/* Officer Workload Breakdown */}
             {analytics?.officers && (
-              <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Officer Workload & Caseload Distribution</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+                <div className="p-4" style={{ borderBottom: '1px solid var(--divider)' }}>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Officer Caseload Distribution</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
                   {analytics.officers.map((off) => (
-                    <div key={off.officer_id} className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
-                      <div className="font-bold text-sm text-slate-900 dark:text-white">{off.officer_name}</div>
-                      <div className="text-xs text-slate-400 font-mono">{off.email}</div>
-                      <div className="grid grid-cols-3 gap-2 pt-2 text-center border-t border-slate-100 dark:border-slate-800">
+                    <div
+                      key={off.officer_id}
+                      className="p-4 space-y-2"
+                      style={{ border: '1px solid var(--divider)', backgroundColor: 'var(--panel)' }}
+                    >
+                      <div className="font-semibold text-xs" style={{ color: 'var(--text-1)' }}>{off.officer_name}</div>
+                      <div className="font-mono text-[11px]" style={{ color: 'var(--text-3)' }}>{off.email}</div>
+                      <div className="grid grid-cols-3 gap-2 pt-2 text-center text-xs" style={{ borderTop: '1px solid var(--divider)' }}>
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-semibold">Assigned</span>
-                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-sm">{off.assigned_requests}</span>
+                          <span className="block text-[10px]" style={{ color: 'var(--text-3)' }}>Assigned</span>
+                          <span className="font-mono font-bold" style={{ color: 'var(--text-1)' }}>{off.assigned_requests}</span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-semibold">Done</span>
-                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">{off.completed_requests}</span>
+                          <span className="block text-[10px]" style={{ color: 'var(--text-3)' }}>Done</span>
+                          <span className="font-mono font-bold" style={{ color: 'var(--on-track)' }}>{off.completed_requests}</span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 block font-semibold">Overdue</span>
-                          <span className="font-mono font-bold text-rose-600 dark:text-rose-400 text-sm">{off.overdue_requests}</span>
+                          <span className="block text-[10px]" style={{ color: 'var(--text-3)' }}>Overdue</span>
+                          <span className="font-mono font-bold" style={{ color: 'var(--alert)' }}>{off.overdue_requests}</span>
                         </div>
                       </div>
                     </div>
@@ -1462,100 +1332,81 @@ export default function App() {
 
       {/* DETAIL INSPECTION MODAL */}
       {showDetailModal && selectedRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 space-y-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div
+            className="max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-6"
+            style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex items-center justify-between pb-3" style={{ borderBottom: '1px solid var(--divider)' }}>
               <div>
-                <span className="text-xs font-bold text-slate-400 uppercase font-mono">Application Details</span>
-                <h3 className="text-2xl font-extrabold text-slate-900 dark:text-white font-mono flex items-center gap-3">
-                  {selectedRequest.reference}
-                  {getStatusBadge(selectedRequest.status)}
-                </h3>
+                <span className="text-[10px] uppercase font-mono block" style={{ color: 'var(--text-3)' }}>Application Detail</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-mono font-bold" style={{ color: 'var(--text-1)' }}>{selectedRequest.reference}</span>
+                  {renderStatus(selectedRequest.status)}
+                </div>
               </div>
-              <button
-                onClick={() => setShowDetailModal(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <X className="w-5 h-5" />
+              <button onClick={() => setShowDetailModal(false)} className="p-1" style={{ color: 'var(--text-3)' }}>
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Actions Toolbar for Officer & Supervisor */}
-            <div className="flex flex-wrap gap-2 pt-2">
+            {/* Action Bar */}
+            <div className="flex flex-wrap gap-2">
               {(currentUser?.role === 'OFFICER' || currentUser?.role === 'SUPERVISOR') && (
-                <button
-                  onClick={() => setShowTransitionModal(true)}
-                  className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-sm transition"
-                >
-                  Update Workflow Status
+                <button onClick={() => setShowTransitionModal(true)} className="btn-ink px-3 py-1.5 text-xs">
+                  Update Status
                 </button>
               )}
-
               {currentUser?.role === 'SUPERVISOR' && (
-                <button
-                  onClick={() => setShowAssignModal(true)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white font-bold text-xs transition"
-                >
+                <button onClick={() => setShowAssignModal(true)} className="btn-outline px-3 py-1.5 text-xs">
                   Assign Officer
                 </button>
               )}
-
               {selectedRequest.status === 'COMPLETED' && (
                 <a
                   href={api.getCertificateDownloadUrl(selectedRequest.id)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm transition"
+                  className="btn-outline px-3 py-1.5 text-xs flex items-center gap-1.5"
                 >
-                  <Award className="w-4 h-4" />
-                  Official Certificate (PDF)
+                  <Download className="w-3.5 h-3.5" />
+                  Certificate (PDF)
                 </a>
               )}
             </div>
 
-            {/* Document Upload & Verification Section */}
-            <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-brand-600 dark:text-brand-400" />
-                  Supporting Documents ({requestDocuments.length})
-                </h4>
+            {/* Document Verification Section */}
+            <div className="space-y-3 pt-3" style={{ borderTop: '1px solid var(--divider)' }}>
+              <div className="flex items-center justify-between text-xs font-semibold" style={{ color: 'var(--text-1)' }}>
+                <span>Documents ({requestDocuments.length})</span>
               </div>
 
-              {/* Upload input for citizen or staff */}
-              <form onSubmit={handleUploadDocument} className="flex items-center gap-3">
+              <form onSubmit={handleUploadDocument} className="flex items-center gap-2">
                 <input
                   type="file"
                   accept=".pdf,.png,.jpg,.jpeg"
                   onChange={(e) => setSelectedFile(e.target.files[0])}
-                  className="text-xs file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-100 dark:file:bg-slate-800 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200"
+                  className="text-xs file:mr-2 file:py-1 file:px-3 file:border file:border-border file:text-xs file:bg-panel file:text-text-1"
                 />
-                <button
-                  type="submit"
-                  disabled={!selectedFile || uploadingDoc}
-                  className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-700 text-white font-bold text-xs transition disabled:opacity-40"
-                >
+                <button type="submit" disabled={!selectedFile || uploadingDoc} className="btn-ink px-3 py-1 text-xs">
                   {uploadingDoc ? 'Uploading...' : 'Upload'}
                 </button>
               </form>
 
-              {/* Document list with verification controls */}
-              <div className="space-y-2 mt-3">
+              <div className="space-y-2 mt-2">
                 {requestDocuments.map((doc) => (
-                  <div key={doc.id} className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div
+                    key={doc.id}
+                    className="p-3 text-xs flex items-center justify-between gap-3"
+                    style={{ border: '1px solid var(--divider)', backgroundColor: 'var(--panel)' }}
+                  >
                     <div>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">{doc.filename}</span>
-                      <span className="text-slate-400 ml-2">({(doc.file_size / 1024).toFixed(1)} KB)</span>
-                      <div className="mt-1">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          doc.status === 'VERIFIED' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' :
-                          doc.status === 'REJECTED' ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300' :
-                          'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
-                        }`}>
-                          {doc.status}
-                        </span>
+                      <span className="font-medium" style={{ color: 'var(--text-1)' }}>{doc.filename}</span>
+                      <span className="ml-2 font-mono text-[11px]" style={{ color: 'var(--text-3)' }}>({(doc.file_size / 1024).toFixed(1)} KB)</span>
+                      <div className="mt-1 flex items-center gap-2">
+                        {renderStatus(doc.status === 'VERIFIED' ? 'On track' : doc.status === 'REJECTED' ? 'REJECTED' : 'Due soon')}
                         {doc.review_comment && (
-                          <span className="text-slate-500 dark:text-slate-400 ml-2">Note: {doc.review_comment}</span>
+                          <span style={{ color: 'var(--text-3)' }}>Note: {doc.review_comment}</span>
                         )}
                       </div>
                     </div>
@@ -1565,22 +1416,23 @@ export default function App() {
                         href={api.getDocumentDownloadUrl(doc.id)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold"
+                        className="underline"
+                        style={{ color: 'var(--text-1)' }}
                       >
                         Download
                       </a>
-
                       {(currentUser?.role === 'OFFICER' || currentUser?.role === 'SUPERVISOR') && doc.status === 'PENDING' && (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex gap-1.5">
                           <button
                             onClick={() => handleVerifyDocument(doc.id, 'VERIFIED')}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                            className="btn-ink px-2 py-0.5 text-xs"
                           >
                             Verify
                           </button>
                           <button
                             onClick={() => handleVerifyDocument(doc.id, 'REJECTED')}
-                            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold"
+                            className="btn-outline px-2 py-0.5 text-xs"
+                            style={{ color: 'var(--alert)' }}
                           >
                             Reject
                           </button>
@@ -1592,25 +1444,20 @@ export default function App() {
               </div>
             </div>
 
-            {/* Audit Events Trail */}
-            <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-                <Clock className="w-4 h-4 text-brand-600 dark:text-brand-400" />
-                Statutory Audit Trail
-              </h4>
-              <div className="max-h-52 overflow-y-auto space-y-2 text-xs">
+            {/* Audit Trail */}
+            <div className="space-y-2 pt-3" style={{ borderTop: '1px solid var(--divider)' }}>
+              <span className="text-xs font-semibold block" style={{ color: 'var(--text-1)' }}>Audit Trail</span>
+              <div className="max-h-48 overflow-y-auto space-y-1.5 text-xs">
                 {requestEvents.map((ev) => (
-                  <div key={ev.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {ev.from_status} ➔ <span className="font-bold text-brand-700 dark:text-brand-400">{ev.to_status}</span>
-                      </span>
-                      <span className="text-slate-400 font-mono">
+                  <div key={ev.id} className="p-2.5" style={{ border: '1px solid var(--divider)', backgroundColor: 'var(--panel)' }}>
+                    <div className="flex justify-between">
+                      <span className="font-mono" style={{ color: 'var(--text-1)' }}>{ev.from_status} ➔ {ev.to_status}</span>
+                      <span className="font-mono text-[10px]" style={{ color: 'var(--text-3)' }}>
                         {new Date(ev.created_at).toLocaleString()}
                       </span>
                     </div>
-                    {ev.reason && <p className="text-slate-600 dark:text-slate-400">Reason: {ev.reason}</p>}
-                    <span className="text-[10px] text-slate-400">Actor: {ev.actor_name || 'System / Citizen'}</span>
+                    {ev.reason && <p className="mt-0.5" style={{ color: 'var(--text-2)' }}>{ev.reason}</p>}
+                    <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>Actor: {ev.actor_name || 'System / Citizen'}</span>
                   </div>
                 ))}
               </div>
@@ -1621,56 +1468,49 @@ export default function App() {
 
       {/* NEW REQUEST MODAL */}
       {showNewRequestModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="max-w-md w-full p-6 space-y-4" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">New Service Application</h3>
-              <button onClick={() => setShowNewRequestModal(false)} className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>New Service Application</h3>
+              <button onClick={() => setShowNewRequestModal(false)} style={{ color: 'var(--text-3)' }}><X className="w-4 h-4" /></button>
             </div>
 
-            <form onSubmit={handleCreateRequest} className="space-y-4">
+            <form onSubmit={handleCreateRequest} className="space-y-3 text-xs">
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">Select Service</label>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Service</label>
                 <select
                   value={newReqServiceCode}
                   onChange={(e) => setNewReqServiceCode(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 text-xs focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
                 >
+                  <option value="">Select Service...</option>
                   {services.map((s) => (
                     <option key={s.code} value={s.code}>
-                      {s.name} ({s.sla_working_days} working days SLA)
+                      {s.name} ({s.sla_working_days} days SLA)
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">Notes / Purpose (Optional)</label>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Notes (Optional)</label>
                 <textarea
                   rows={3}
                   value={newReqNotes}
                   onChange={(e) => setNewReqNotes(e.target.value)}
-                  placeholder="e.g. Required for urgent overseas business travel"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                ></textarea>
+                  className="w-full px-3 py-2 text-xs focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+                  placeholder="Notes or purpose"
+                />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowNewRequestModal(false)}
-                  className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowNewRequestModal(false)} className="btn-outline px-3 py-1.5 text-xs">
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md transition"
-                >
-                  Submit Application
+                <button type="submit" disabled={loading || !newReqServiceCode} className="btn-ink px-3 py-1.5 text-xs">
+                  Submit
                 </button>
               </div>
             </form>
@@ -1680,36 +1520,34 @@ export default function App() {
 
       {/* BOOK APPOINTMENT MODAL */}
       {showAppointmentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="max-w-md w-full p-6 space-y-4" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Book Counter Appointment</h3>
-              <button onClick={() => setShowAppointmentModal(false)} className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>Book Counter Appointment</h3>
+              <button onClick={() => setShowAppointmentModal(false)} style={{ color: 'var(--text-3)' }}><X className="w-4 h-4" /></button>
             </div>
 
-            <form onSubmit={handleBookAppointment} className="space-y-4">
+            <form onSubmit={handleBookAppointment} className="space-y-3 text-xs">
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">Office Location</label>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Office Location</label>
                 <select
                   value={apptOfficeCode}
                   onChange={(e) => {
                     setApptOfficeCode(e.target.value);
                     handleCheckAvailability(e.target.value, apptDate);
                   }}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 text-xs focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
                 >
+                  <option value="">Select Office...</option>
                   {offices.map((o) => (
-                    <option key={o.code} value={o.code}>
-                      {o.name} ({o.code})
-                    </option>
+                    <option key={o.code} value={o.code}>{o.name} ({o.code})</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">Date (Sunday–Friday)</label>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Date (Sunday–Friday)</label>
                 <input
                   type="date"
                   value={apptDate}
@@ -1717,52 +1555,46 @@ export default function App() {
                     setApptDate(e.target.value);
                     handleCheckAvailability(apptOfficeCode, e.target.value);
                   }}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="w-full px-3 py-2 text-xs font-mono focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
                 />
               </div>
 
               {availableSlots.length > 0 && (
                 <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">Available 30-Minute Slots</label>
-                  <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                  <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>30-Minute Slots</label>
+                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
                     {availableSlots.map((s) => (
                       <button
                         key={s.slot_start}
                         type="button"
                         disabled={s.places_left <= 0}
                         onClick={() => setApptSlot(s.slot_start)}
-                        className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition ${
-                          apptSlot === s.slot_start
-                            ? 'bg-brand-600 text-white border-brand-600'
-                            : s.places_left > 0
-                            ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
-                            : 'bg-slate-100 dark:bg-slate-950 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 opacity-50 cursor-not-allowed'
-                        }`}
+                        className="p-2 text-left text-xs font-mono transition"
+                        style={{
+                          backgroundColor: apptSlot === s.slot_start ? 'var(--ink)' : 'var(--panel)',
+                          color: apptSlot === s.slot_start ? 'var(--on-ink)' : 'var(--text-1)',
+                          border: '1px solid',
+                          borderColor: apptSlot === s.slot_start ? 'var(--ink)' : 'var(--border)',
+                          opacity: s.places_left <= 0 ? 0.4 : 1
+                        }}
                       >
                         <div>{s.slot_start} - {s.slot_end}</div>
-                        <span className="text-[10px] block font-mono">
-                          {s.places_left > 0 ? `${s.places_left} places left` : 'Fully Booked'}
-                        </span>
+                        <div className="text-[10px]" style={{ color: apptSlot === s.slot_start ? 'var(--on-ink)' : 'var(--text-3)' }}>
+                          {s.places_left > 0 ? `${s.places_left} places left` : 'Full'}
+                        </div>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAppointmentModal(false)}
-                  className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowAppointmentModal(false)} className="btn-outline px-3 py-1.5 text-xs">
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={!apptSlot || loading}
-                  className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md transition disabled:opacity-40"
-                >
-                  Confirm Appointment
+                <button type="submit" disabled={!apptSlot || loading} className="btn-ink px-3 py-1.5 text-xs">
+                  Book Slot
                 </button>
               </div>
             </form>
@@ -1772,48 +1604,47 @@ export default function App() {
 
       {/* TRANSITION MODAL */}
       {showTransitionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Transition Workflow Status</h3>
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Target Status</label>
-              <select
-                value={transitionTarget}
-                onChange={(e) => setTransitionTarget(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold"
-              >
-                <option value="">Select Target Status...</option>
-                <option value="UNDER_REVIEW">UNDER_REVIEW</option>
-                <option value="NEEDS_INFO">NEEDS_INFO (Pauses SLA Clock)</option>
-                <option value="APPROVED">APPROVED</option>
-                <option value="COMPLETED">COMPLETED (Generates Certificate)</option>
-                <option value="REJECTED">REJECTED</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Reason / Note</label>
-              <input
-                type="text"
-                value={transitionReason}
-                onChange={(e) => setTransitionReason(e.target.value)}
-                placeholder="e.g. Verified supporting citizenship document"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
-              />
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowTransitionModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleTransition}
-                disabled={!transitionTarget || loading}
-                className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs"
-              >
-                Confirm Move
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="max-w-md w-full p-6 space-y-4" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+            <h3 className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>Transition Workflow Status</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Target Status</label>
+                <select
+                  value={transitionTarget}
+                  onChange={(e) => setTransitionTarget(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-mono focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+                >
+                  <option value="">Select Status...</option>
+                  <option value="UNDER_REVIEW">UNDER_REVIEW</option>
+                  <option value="NEEDS_INFO">NEEDS_INFO (Pauses Clock)</option>
+                  <option value="APPROVED">APPROVED</option>
+                  <option value="COMPLETED">COMPLETED (Generates Certificate)</option>
+                  <option value="REJECTED">REJECTED</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Reason / Remark</label>
+                <input
+                  type="text"
+                  value={transitionReason}
+                  onChange={(e) => setTransitionReason(e.target.value)}
+                  placeholder="e.g. Verified citizenship documentation"
+                  className="w-full px-3 py-2 text-xs focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowTransitionModal(false)} className="btn-outline px-3 py-1.5 text-xs">
+                  Cancel
+                </button>
+                <button onClick={handleTransition} disabled={!transitionTarget || loading} className="btn-ink px-3 py-1.5 text-xs">
+                  Confirm
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1821,48 +1652,46 @@ export default function App() {
 
       {/* ASSIGN OFFICER MODAL */}
       {showAssignModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assign Request to Officer</h3>
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Select Officer</label>
-              {analytics?.officers && analytics.officers.length > 0 ? (
-                <select
-                  value={assignOfficerId}
-                  onChange={(e) => setAssignOfficerId(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-medium"
-                >
-                  <option value="">Choose an Officer...</option>
-                  {analytics.officers.map((off) => (
-                    <option key={off.officer_id} value={off.officer_id}>
-                      {off.officer_name} ({off.email}) — {off.assigned_requests} active cases
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="number"
-                  value={assignOfficerId}
-                  onChange={(e) => setAssignOfficerId(e.target.value)}
-                  placeholder="e.g. 2"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
-                />
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAssignOfficer}
-                disabled={!assignOfficerId || loading}
-                className="px-4 py-2 rounded-xl bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 text-white font-bold text-xs"
-              >
-                Assign
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="max-w-md w-full p-6 space-y-4" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
+            <h3 className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>Assign Officer</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Select Officer</label>
+                {analytics?.officers && analytics.officers.length > 0 ? (
+                  <select
+                    value={assignOfficerId}
+                    onChange={(e) => setAssignOfficerId(e.target.value)}
+                    className="w-full px-3 py-2 text-xs focus:outline-none"
+                    style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+                  >
+                    <option value="">Select an Officer...</option>
+                    {analytics.officers.map((off) => (
+                      <option key={off.officer_id} value={off.officer_id}>
+                        {off.officer_name} ({off.email}) — {off.assigned_requests} active
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="number"
+                    value={assignOfficerId}
+                    onChange={(e) => setAssignOfficerId(e.target.value)}
+                    placeholder="e.g. 2"
+                    className="w-full px-3 py-2 text-xs font-mono focus:outline-none"
+                    style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
+                  />
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowAssignModal(false)} className="btn-outline px-3 py-1.5 text-xs">
+                  Cancel
+                </button>
+                <button onClick={handleAssignOfficer} disabled={!assignOfficerId || loading} className="btn-ink px-3 py-1.5 text-xs">
+                  Assign
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1870,71 +1699,69 @@ export default function App() {
 
       {/* AUTH MODAL */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="max-w-sm w-full p-6 space-y-4" style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)' }}>
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
-                {authMode === 'login' ? 'Sign In to Portal' : 'Citizen Registration'}
+              <h3 className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                {authMode === 'login' ? 'Sign In' : 'Register Citizen Account'}
               </h3>
-              <button onClick={() => setShowAuthModal(false)} className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setShowAuthModal(false)} style={{ color: 'var(--text-3)' }}><X className="w-4 h-4" /></button>
             </div>
 
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
+            <form onSubmit={handleAuthSubmit} className="space-y-3 text-xs">
               {authMode === 'register' && (
                 <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Full Legal Name</label>
+                  <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Full Name</label>
                   <input
                     type="text"
                     required
                     value={authFullName}
                     onChange={(e) => setAuthFullName(e.target.value)}
                     placeholder="e.g. John Citizen"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold"
+                    className="w-full px-3 py-2 text-xs focus:outline-none"
+                    style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
                   />
                 </div>
               )}
 
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Email Address</label>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Email</label>
                 <input
                   type="email"
                   required
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
                   placeholder="name@example.org"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold"
+                  className="w-full px-3 py-2 text-xs focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Password</label>
+                <label className="block mb-1 font-medium" style={{ color: 'var(--text-2)' }}>Password</label>
                 <input
                   type="password"
                   required
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-semibold"
+                  className="w-full px-3 py-2 text-xs focus:outline-none"
+                  style={{ backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
                 />
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-xl bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-700 text-white font-bold text-sm shadow-md transition"
-              >
+              <button type="submit" disabled={loading} className="btn-ink w-full py-2 text-xs mt-2">
                 {authMode === 'login' ? 'Sign In' : 'Create Account'}
               </button>
 
-              <div className="text-center pt-2">
+              <div className="text-center pt-1">
                 <button
                   type="button"
                   onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                  className="text-xs text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+                  className="underline"
+                  style={{ color: 'var(--text-3)' }}
                 >
-                  {authMode === 'login' ? "Don't have an account? Register here" : 'Already registered? Sign in'}
+                  {authMode === 'login' ? 'Need an account? Register' : 'Already registered? Sign In'}
                 </button>
               </div>
             </form>
