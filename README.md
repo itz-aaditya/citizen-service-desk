@@ -118,7 +118,7 @@ Terminal interface for sysadmins and automated cron jobs:
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/YOUR_USERNAME/citizen-service-desk.git
+git clone https://github.com/itz-aaditya/citizen-service-desk.git
 cd citizen-service-desk
 
 # 2. Set up Python virtual environment
